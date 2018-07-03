@@ -4,8 +4,8 @@ import math
 
 def year_angles(latitude, longitude, elevation):
     """
-    Yields the unit vector pointing to the sun over the year of 2017, for
-    every 5 minutes of daylight.
+    Yields the position (azimuth, altitude) of the sun over the year
+    of 2017, for every 5 minutes of daylight.
 
     Result is a tuple.
     """
@@ -26,11 +26,12 @@ def year_angles(latitude, longitude, elevation):
         v = ephem.Sun(obs)
 
         if v.alt > 0.0:
-            y = math.sin(v.alt)
-            compl = math.cos(v.alt)
-            x = math.sin(v.az) * compl
-            z = math.cos(v.az) * compl
+            #y = math.sin(v.alt)
+            #compl = math.cos(v.alt)
+            #x = math.sin(v.az) * compl
+            #z = math.cos(v.az) * compl
 
-            yield (x, y, z)
+            #yield (x, y, z)
+            yield (v.az, v.alt)
 
         t += dt
