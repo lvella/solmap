@@ -6,6 +6,7 @@
 #include "concurrentqueue.hpp"
 #include "semaphore.hpp"
 #include "sun_seq.hpp"
+#include "vec3.hpp"
 
 constexpr double to_deg(double rad)
 {
@@ -17,13 +18,13 @@ constexpr double to_rad(double deg)
 	return deg * M_PI / 180.0;
 }
 
+const Vec3 norm{0.0, 0.5*sqrt(2.0), -0.5*sqrt(2.0)};
+
 class ShadowProcessor
 {
 public:
 	void process(const AngularPosition& p)
 	{
-		std::cout << to_deg(p.alt) << ' ' << to_deg(p.az) << std::endl;
-
 		// Transforms into a unit vector pointing to the sun.
 		// We convention Y as upwards and -z as N, thus
 		// lookig from above, we have:
@@ -35,16 +36,21 @@ public:
 		//           |
 		//           |
 		//        +z, S
-                sum[1] += sin(p.alt);
                 double c = cos(p.alt);
-                sum[0] += sin(p.az) * c;
-                sum[2] += -cos(p.az) * c;
 
+		Vec3 sun{
+			sin(p.az) * c,
+			sin(p.alt),
+			-cos(p.az) * c
+		};
+
+		sum += sun;
 		++count;
 	}
 
-	double sum[3] = {0};
-	size_t count;
+	double test = 0;
+	Vec3 sum;
+	size_t count = 0;
 };
 
 void
@@ -102,21 +108,40 @@ calculate_yearly_incidence(
 	}
 }
 
-int main()
+int main(int argc, char *argv[])
 {
-	std::vector<ShadowProcessor> ps(7);
-	calculate_yearly_incidence(-18.9132819, -48.2584852, 863, ps);
+	if(argc < 3) {
+		std::cout << "Please provide latitude and longitude.\n";
+		exit(1);
+	}
+	double lat = atof(argv[1]);
+	double lon = atof(argv[2]);
 
-	double total[3] = {0.0};
+	std::vector<ShadowProcessor> ps(7);
+	calculate_yearly_incidence(lat, lon, 0, ps);
+
+	Vec3 total;
 	size_t count = 0;
 	for(auto &p: ps) {
-		total[0] += p.sum[0];
-		total[1] += p.sum[1];
-		total[2] += p.sum[2];
-
+		total += p.sum;
 		count += p.count;
 	}
 
-	printf("%g %g %g, %zu\n",
-		total[0], total[1], total[2], count);
+	Vec3 best_dir = total.normalized();
+
+	double best_alt = acos(best_dir.y());
+
+	// Project total to the surface plane:
+	Vec3 plane_dir{total.x(), 0.0, total.z()};
+	double best_az = acos(Vec3::dot(Vec3{0, 0, -1}, plane_dir)
+		/ plane_dir.norm());
+
+	std::cout << "Best placement for latitude "
+		<< lat << " and longitude " << lon
+		<< " is:\n"
+		"Altitude: " << to_deg(best_alt) << "°\n"
+		"Azimuth: " << to_deg(best_az) << "°\n\n"
+		"Over ther year, the mean power at best position is: "
+		<< 1000.0 * Vec3::dot(total, best_dir) / count
+		<< std::endl;
 }
