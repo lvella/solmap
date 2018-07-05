@@ -19,4 +19,4 @@ do something much crazier.
 
 ## Dependencies
 
-You need Python 3 with CFFI to build, and PyEphem on Python path to build.
+You need Python 3 with CFFI to build, and PyEphem on Python path to run.
