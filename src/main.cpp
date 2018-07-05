@@ -141,7 +141,6 @@ int main(int argc, char *argv[])
 		<< " is:\n"
 		"Altitude: " << to_deg(best_alt) << "°\n"
 		"Azimuth: " << to_deg(best_az) << "°\n\n"
-		"Over ther year, the mean power at best position is: "
-		<< 1000.0 * Vec3::dot(total, best_dir) / count
-		<< std::endl;
+		"At that position, the mean daytime power over a year is:\n"
+		<< 1000.0 * Vec3::dot(total, best_dir) / count << " watts/m²\n";
 }
