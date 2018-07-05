@@ -100,7 +100,7 @@ calculate_yearly_incidence(
 		sem.signal();
 	}
 
-	// Notify the processor without producing anything.
+	// Notify the processors without producing anything.
 	sem.signal(jobs.size());
 
 	for(auto &t: jobs) {
