@@ -24,11 +24,21 @@ public:
 	{
 		std::cout << to_deg(p.alt) << ' ' << to_deg(p.az) << std::endl;
 
-		// Transforms into a unit vector pointing to the sun:
+		// Transforms into a unit vector pointing to the sun.
+		// We convention Y as upwards and -z as N, thus
+		// lookig from above, we have:
+		//
+		//        -z, N
+		//           |
+		//           |
+		// -x, O ----+---- +x, E
+		//           |
+		//           |
+		//        +z, S
                 sum[1] += sin(p.alt);
                 double c = cos(p.alt);
                 sum[0] += sin(p.az) * c;
-                sum[2] += cos(p.az) * c;
+                sum[2] += -cos(p.az) * c;
 
 		++count;
 	}

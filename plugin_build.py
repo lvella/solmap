@@ -40,12 +40,6 @@ ffibuilder.embedding_init_code("""
             v = ephem.Sun(obs)
 
             if v.alt > 0.0:
-                #y = math.sin(v.alt)
-                #compl = math.cos(v.alt)
-                #x = math.sin(v.az) * compl
-                #z = math.cos(v.az) * compl
-
-                #yield (x, y, z)
                 yield (v.az, v.alt)
 
             t += dt
