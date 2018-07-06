@@ -1,8 +1,8 @@
 CC = gcc
-CXX = g++
+CXX = g++ -std=c++17
 
 FLAGS = -g -pthread
-LIBS = $(shell pkg-config python3 --libs)
+LIBS = $(shell pkg-config python3 --libs) -lvulkan
 
 MODULES = \
 	main \

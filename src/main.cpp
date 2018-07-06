@@ -3,6 +3,7 @@
 #include <thread>
 #include <cmath>
 
+#include "vk_manager.hpp"
 #include "concurrentqueue.hpp"
 #include "semaphore.hpp"
 #include "sun_seq.hpp"
@@ -108,8 +109,48 @@ calculate_yearly_incidence(
 	}
 }
 
+auto initialize_vulkan()
+{
+	const char *layers[] = {"VK_LAYER_LUNARG_standard_validation"};
+	auto vk = create_vk<vkCreateInstance, vkDestroyInstance>(
+		VkInstanceCreateInfo{
+			VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+			nullptr,
+			0,
+			nullptr,
+#ifdef NDEBUG
+			0,
+			nullptr,
+#else
+			1,
+			layers,
+#endif
+			0,
+			nullptr
+		}
+	);
+
+	uint32_t dcount;
+	chk_vk(vkEnumeratePhysicalDevices(vk.get(), &dcount, nullptr));
+
+	std::vector<VkPhysicalDevice> pds(dcount);
+	chk_vk(vkEnumeratePhysicalDevices(vk.get(), &dcount, pds.data()));
+
+	for(auto &d: pds) {
+		VkPhysicalDeviceProperties props;
+
+		vkGetPhysicalDeviceProperties(d, &props);
+		std::cout << props.deviceName << ' '
+			<< props.deviceType << std::endl;
+	}
+
+	return vk;
+}
+
 int main(int argc, char *argv[])
 {
+	auto vk = initialize_vulkan();
+
 	if(argc < 3) {
 		std::cout << "Please provide latitude and longitude.\n";
 		exit(1);
