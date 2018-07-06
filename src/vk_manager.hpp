@@ -75,3 +75,12 @@ auto create_vk(const CreateInfo& info, Args... args)
 	    Deleter
 	>{obj};
 }
+
+// Naming the returned types, for convenience.
+using UVkInstance = decltype(
+	create_vk<vkCreateInstance, vkDestroyInstance>(VkInstanceCreateInfo{})
+);
+
+using UVkDevice = decltype(
+	create_vk<vkCreateDevice, vkDestroyDevice>(VkDeviceCreateInfo{}, VkPhysicalDevice{})
+);

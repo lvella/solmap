@@ -7,7 +7,7 @@
 #include "concurrentqueue.hpp"
 #include "semaphore.hpp"
 #include "sun_seq.hpp"
-#include "vec3.hpp"
+#include "shadow_processor.hpp"
 
 constexpr double to_deg(double rad)
 {
@@ -20,39 +20,6 @@ constexpr double to_rad(double deg)
 }
 
 const Vec3 norm{0.0, 0.5*sqrt(2.0), -0.5*sqrt(2.0)};
-
-class ShadowProcessor
-{
-public:
-	void process(const AngularPosition& p)
-	{
-		// Transforms into a unit vector pointing to the sun.
-		// We convention Y as upwards and -z as N, thus
-		// lookig from above, we have:
-		//
-		//        -z, N
-		//           |
-		//           |
-		// -x, O ----+---- +x, E
-		//           |
-		//           |
-		//        +z, S
-                double c = cos(p.alt);
-
-		Vec3 sun{
-			sin(p.az) * c,
-			sin(p.alt),
-			-cos(p.az) * c
-		};
-
-		sum += sun;
-		++count;
-	}
-
-	double test = 0;
-	Vec3 sum;
-	size_t count = 0;
-};
 
 void
 calculate_yearly_incidence(
@@ -109,10 +76,86 @@ calculate_yearly_incidence(
 	}
 }
 
-auto initialize_vulkan()
+void create_if_compute(VkPhysicalDevice pd, std::vector<ShadowProcessor>& procs)
 {
-	const char *layers[] = {"VK_LAYER_LUNARG_standard_validation"};
-	auto vk = create_vk<vkCreateInstance, vkDestroyInstance>(
+	// Query queue capabilities:
+	uint32_t num_qf;
+	vkGetPhysicalDeviceQueueFamilyProperties(pd, &num_qf, nullptr);
+
+	std::vector<VkQueueFamilyProperties> qfp(num_qf);
+	vkGetPhysicalDeviceQueueFamilyProperties(pd, &num_qf, qfp.data());
+
+	// Select which queue families to use in the device:
+	std::vector<VkDeviceQueueCreateInfo> used_qf;
+	used_qf.reserve(num_qf);
+
+	uint32_t total_queue_count = 0;
+	std::vector<float> priorities;
+	for(uint32_t i = 0; i < num_qf; ++i) {
+		// Queue family is not for compute, skip.
+		if(!(qfp[i].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
+			continue;
+		}
+
+		// All priorities are the same: adjust priority
+		// vector to the biggest number of queues, overall:
+		if(priorities.size() < qfp[i].queueCount) {
+			priorities.resize(qfp[i].queueCount, 1.0);
+		}
+
+		// Set this family for use:
+		used_qf.push_back({
+			.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+			.pNext = nullptr,
+			.flags = 0,
+			.queueFamilyIndex = i,
+			.queueCount = qfp[i].queueCount
+			// We set pQueuePriorities, because the pointer might change.
+		});
+
+		total_queue_count += qfp[i].queueCount;
+	}
+
+	// Set pQueuePriorities:
+	for(auto& qf: used_qf) {
+		qf.pQueuePriorities = priorities.data();
+	}
+
+	// Create only if there is any usable queue family.
+	if(used_qf.empty()) {
+		return;
+	}
+
+	UVkDevice d = create_vk<vkCreateDevice, vkDestroyDevice>(VkDeviceCreateInfo{
+			VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+			nullptr,
+			0,
+			(uint32_t)used_qf.size(), used_qf.data(),
+			0, nullptr,
+			0, nullptr,
+			nullptr
+		}, pd
+	);
+
+	// Retrieve que requested queues from the newly created device:
+	std::vector<VkQueue> queues;
+	queues.reserve(total_queue_count);
+	for(auto& qf: used_qf) {
+		for(uint32_t i = 0; i < qf.queueCount; ++i) {
+			queues.emplace_back();
+			vkGetDeviceQueue(d.get(), qf.queueFamilyIndex, i, &queues.back());
+		}
+	}
+
+	procs.emplace_back(std::move(d), std::move(queues));
+}
+
+UVkInstance initialize_vulkan(std::vector<ShadowProcessor> &processors)
+{
+	const char *layers[] = {
+		"VK_LAYER_LUNARG_standard_validation"
+	};
+	UVkInstance vk = create_vk<vkCreateInstance, vkDestroyInstance>(
 		VkInstanceCreateInfo{
 			VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 			nullptr,
@@ -136,12 +179,14 @@ auto initialize_vulkan()
 	std::vector<VkPhysicalDevice> pds(dcount);
 	chk_vk(vkEnumeratePhysicalDevices(vk.get(), &dcount, pds.data()));
 
-	for(auto &d: pds) {
+	for(auto &pd: pds) {
 		VkPhysicalDeviceProperties props;
 
-		vkGetPhysicalDeviceProperties(d, &props);
+		vkGetPhysicalDeviceProperties(pd, &props);
 		std::cout << props.deviceName << ' '
 			<< props.deviceType << std::endl;
+
+		create_if_compute(pd, processors);
 	}
 
 	return vk;
@@ -149,7 +194,9 @@ auto initialize_vulkan()
 
 int main(int argc, char *argv[])
 {
-	auto vk = initialize_vulkan();
+	std::vector<ShadowProcessor> ps;
+
+	UVkInstance vk = initialize_vulkan(ps);
 
 	if(argc < 3) {
 		std::cout << "Please provide latitude and longitude.\n";
@@ -158,14 +205,13 @@ int main(int argc, char *argv[])
 	double lat = atof(argv[1]);
 	double lon = atof(argv[2]);
 
-	std::vector<ShadowProcessor> ps(7);
 	calculate_yearly_incidence(lat, lon, 0, ps);
 
 	Vec3 total;
 	size_t count = 0;
 	for(auto &p: ps) {
-		total += p.sum;
-		count += p.count;
+		total += p.get_sum();
+		count += p.get_count();
 	}
 
 	Vec3 best_dir = total.normalized();
