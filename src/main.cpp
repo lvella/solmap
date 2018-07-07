@@ -150,7 +150,7 @@ void create_if_compute(VkPhysicalDevice pd, std::vector<ShadowProcessor>& procs)
 	procs.emplace_back(std::move(d), std::move(queues));
 }
 
-UVkInstance initialize_vulkan(std::vector<ShadowProcessor> &processors)
+UVkInstance initialize_vulkan()
 {
 	const char *layers[] = {
 		"VK_LAYER_LUNARG_standard_validation"
@@ -172,12 +172,18 @@ UVkInstance initialize_vulkan(std::vector<ShadowProcessor> &processors)
 			nullptr
 		}
 	);
+	return vk;
+}
+
+std::vector<ShadowProcessor> create_procs_from_devices(VkInstance vk)
+{
+	std::vector<ShadowProcessor> processors;
 
 	uint32_t dcount;
-	chk_vk(vkEnumeratePhysicalDevices(vk.get(), &dcount, nullptr));
+	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, nullptr));
 
 	std::vector<VkPhysicalDevice> pds(dcount);
-	chk_vk(vkEnumeratePhysicalDevices(vk.get(), &dcount, pds.data()));
+	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, pds.data()));
 
 	for(auto &pd: pds) {
 		VkPhysicalDeviceProperties props;
@@ -189,21 +195,22 @@ UVkInstance initialize_vulkan(std::vector<ShadowProcessor> &processors)
 		create_if_compute(pd, processors);
 	}
 
-	return vk;
+	return processors;
 }
 
 int main(int argc, char *argv[])
 {
-	std::vector<ShadowProcessor> ps;
-
-	UVkInstance vk = initialize_vulkan(ps);
-
 	if(argc < 3) {
 		std::cout << "Please provide latitude and longitude.\n";
 		exit(1);
 	}
 	double lat = atof(argv[1]);
 	double lon = atof(argv[2]);
+
+	UVkInstance vk = initialize_vulkan();
+
+	std::vector<ShadowProcessor> ps =
+		create_procs_from_devices(vk.get());
 
 	calculate_yearly_incidence(lat, lon, 0, ps);
 
