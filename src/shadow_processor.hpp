@@ -2,6 +2,8 @@
 
 #include <vector>
 #include <iostream>
+#include <cmath>
+
 #include "vec3.hpp"
 #include "vk_manager.hpp"
 
@@ -46,9 +48,9 @@ public:
                 double c = cos(p.alt);
 
 		Vec3 sun{
-			sin(p.az) * c,
-			sin(p.alt),
-			-cos(p.az) * c
+			std::sin(p.az) * c,
+			std::sin(p.alt),
+			-std::cos(p.az) * c
 		};
 
 		sum += sun;
@@ -69,7 +71,7 @@ private:
 	UVkDevice d;
 	std::vector<VkQueue> qs;
 
-	Vec3 sum;
+	Vec3 sum = {0,0,0};
 	size_t count = 0;
 };
 

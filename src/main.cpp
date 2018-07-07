@@ -3,6 +3,8 @@
 #include <thread>
 #include <cmath>
 
+#include <glm/geometric.hpp>
+
 #include "vk_manager.hpp"
 #include "concurrentqueue.hpp"
 #include "semaphore.hpp"
@@ -221,14 +223,14 @@ int main(int argc, char *argv[])
 		count += p.get_count();
 	}
 
-	Vec3 best_dir = total.normalized();
+	Vec3 best_dir = glm::normalize(total);
 
-	double best_alt = acos(best_dir.y());
+	double best_alt = std::acos(best_dir.y);
 
 	// Project total to the surface plane:
-	Vec3 plane_dir{total.x(), 0.0, total.z()};
-	double best_az = acos(Vec3::dot(Vec3{0, 0, -1}, plane_dir)
-		/ plane_dir.norm());
+	Vec3 plane_dir{total.x, 0.0, total.z};
+	double best_az = std::acos(glm::dot(Vec3{0, 0, -1}, plane_dir)
+		/ glm::length(plane_dir));
 
 	std::cout << "Best placement for latitude "
 		<< lat << " and longitude " << lon
@@ -236,5 +238,5 @@ int main(int argc, char *argv[])
 		"Altitude: " << to_deg(best_alt) << "°\n"
 		"Azimuth: " << to_deg(best_az) << "°\n\n"
 		"At that position, the mean daytime power over a year is:\n"
-		<< 1000.0 * Vec3::dot(total, best_dir) / count << " watts/m²\n";
+		<< 1000.0 * glm::dot(total, best_dir) / count << " watts/m²\n";
 }
