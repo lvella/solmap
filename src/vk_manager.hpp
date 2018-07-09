@@ -26,6 +26,51 @@ private:
 
 void chk_vk(VkResult err);
 
+// Memory mapping guard. Flushes and unmap when destroyed.
+class MemMapper
+{
+public:
+    MemMapper(
+	    VkDevice device, VkDeviceMemory memory,
+	    VkDeviceSize offset=0, VkDeviceSize size=VK_WHOLE_SIZE
+    ):
+	d(device),
+	m(memory),
+	o(offset)
+    {
+	// Map the memory range.
+	chk_vk(vkMapMemory(d, m, offset, size, 0, &data));
+    }
+
+    ~MemMapper()
+    {
+	// Flush the mapped range.
+	VkMappedMemoryRange range {
+	    VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+	    nullptr,
+	    m,
+	    o,
+	    VK_WHOLE_SIZE
+	};
+	vkFlushMappedMemoryRanges(d, 1, &range);
+
+	// Unmap it.
+	vkUnmapMemory(d, m);
+    }
+
+    template<typename T>
+    T get()
+    {
+	return static_cast<T>(data);
+    }
+
+private:
+    VkDevice d;
+    VkDeviceMemory m;
+    VkDeviceSize o;
+    void *data;
+};
+
 // Find the last argument type of a function type.
 // Adapted from https://stackoverflow.com/a/46560993/578749
 template<typename T>

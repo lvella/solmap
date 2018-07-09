@@ -77,12 +77,41 @@ MeshBuffers::MeshBuffers(VkDevice device,
 ):
 	vertex(device, mem_props,
 		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-		mesh->mNumVertices * sizeof(Vec3)),
+		mesh->mNumVertices * 3 * sizeof(real)),
 	index(device, mem_props,
 		VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		mesh->mNumFaces * 3 * sizeof(uint32_t))
 {
-	// TODO: fill buffers
+	{
+		// Copy the vertex data.
+		// In the process, scale it so it will always stay
+		// within the render area. Since we know all the points
+		// are within [-1, 1], the biggest lenth possible is 2*sqrt(3)
+		// (the diagonal of a cube). Thus, by scalig by 1/sqrt(3), we
+		// ensure que biggest lenght fits in the [-1, 1] square of
+		// the render area.
+		const real factor = 1.0 / std::sqrt(3.0);
+		MemMapper map(device, vertex.mem.get());
+		auto ptr = map.get<real (*)[3]>();
+		for(uint32_t i = 0; i < mesh->mNumVertices; ++i) {
+			const auto v = factor * mesh->mVertices[i];
+			for(uint32_t j = 0; j < 3; ++j) {
+				ptr[i][j] = v[j];
+			}
+		}
+	}
+
+	{
+		// Copy the index data.
+		MemMapper map(device, index.mem.get());
+		auto ptr = map.get<uint32_t (*)[3]>();
+		for(uint32_t i = 0; i < mesh->mNumFaces; ++i) {
+			assert(mesh->mFaces[i].mNumIndices == 3);
+			for(uint32_t j = 0; j < 3; ++j) {
+				ptr[i][j] = mesh->mFaces[i].mIndices[j];;
+			}
+		}
+	}
 }
 
 QueueFamilyManager::QueueFamilyManager(
