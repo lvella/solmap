@@ -108,7 +108,7 @@ MeshBuffers::MeshBuffers(VkDevice device,
 		for(uint32_t i = 0; i < mesh->mNumFaces; ++i) {
 			assert(mesh->mFaces[i].mNumIndices == 3);
 			for(uint32_t j = 0; j < 3; ++j) {
-				ptr[i][j] = mesh->mFaces[i].mIndices[j];;
+				ptr[i][j] = mesh->mFaces[i].mIndices[j];
 			}
 		}
 	}
