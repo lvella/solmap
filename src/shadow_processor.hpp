@@ -11,16 +11,53 @@ extern "C" {
 #include "sun_position.h"
 }
 
+struct Buffer
+{
+	Buffer(VkDevice device,
+		const VkPhysicalDeviceMemoryProperties& mem_props,
+		VkBufferUsageFlags usage, uint32_t size);
+
+	UVkDeviceMemory mem;
+	UVkBuffer buf;
+};
+
+struct MeshBuffers
+{
+	MeshBuffers(VkDevice device,
+		const VkPhysicalDeviceMemoryProperties& mem_props,
+		const class aiMesh* mesh);
+
+	Buffer vertex;
+	Buffer index;
+};
+
+class QueueFamilyManager
+{
+public:
+	QueueFamilyManager(
+		VkDevice device,
+		const VkPhysicalDeviceMemoryProperties& mem_props,
+		uint32_t idx,
+		std::vector<VkQueue>&& queues,
+		const class aiScene* scene);
+
+private:
+	uint32_t qf_idx;
+	std::vector<VkQueue> qs;
+
+	std::vector<MeshBuffers> meshes;
+};
+
 // If moved, the only valid operation is destruction.
 class ShadowProcessor
 {
 public:
-	ShadowProcessor(UVkDevice&& device, std::vector<VkQueue>&& queues):
-		d{std::move(device)},
-		qs{std::move(queues)}
-	{
-		std::cout << "### Total compute queues: " << qs.size() << '\n';
-	}
+	ShadowProcessor(
+		VkPhysicalDevice pdevice,
+		UVkDevice&& device,
+		std::vector<std::pair<uint32_t,
+			std::vector<VkQueue>>>&& queues,
+		const class aiScene* scene);
 
 	ShadowProcessor(ShadowProcessor&& other) = default;
 	ShadowProcessor &operator=(ShadowProcessor&& other) = default;
@@ -32,30 +69,7 @@ public:
 		}
 	}
 
-	void process(const AngularPosition& p)
-	{
-		// Transforms into a unit vector pointing to the sun.
-		// We convention Y as upwards and -z as N, thus
-		// lookig from above, we have:
-		//
-		//        -z, N
-		//           |
-		//           |
-		// -x, O ----+---- +x, E
-		//           |
-		//           |
-		//        +z, S
-                double c = cos(p.alt);
-
-		Vec3 sun{
-			std::sin(p.az) * c,
-			std::sin(p.alt),
-			-std::cos(p.az) * c
-		};
-
-		sum += sun;
-		++count;
-	}
+	void process(const AngularPosition& p);
 
 	const Vec3& get_sum() const
 	{
@@ -69,7 +83,7 @@ public:
 
 private:
 	UVkDevice d;
-	std::vector<VkQueue> qs;
+	std::vector<QueueFamilyManager> qfs;
 
 	Vec3 sum = {0,0,0};
 	size_t count = 0;

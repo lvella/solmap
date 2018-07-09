@@ -1,12 +1,15 @@
-CC = gcc
-CXX = g++ -std=c++17
+CC = clang-6.0
+CXX = clang++-6.0 -std=c++17
 
 FLAGS = -g -pthread
-LIBS = $(shell pkg-config python3 --libs) -lvulkan
+LIBS = $(shell pkg-config python3 --libs) -lvulkan -lassimp
 
 MODULES = \
 	main \
-	sun_position
+	scene_loader \
+	shadow_processor \
+	sun_position \
+	vk_manager
 
 BDIR = build
 SDIR = src

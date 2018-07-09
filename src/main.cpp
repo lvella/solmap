@@ -10,6 +10,7 @@
 #include "semaphore.hpp"
 #include "sun_seq.hpp"
 #include "shadow_processor.hpp"
+#include "scene_loader.hpp"
 
 constexpr double to_deg(double rad)
 {
@@ -21,7 +22,7 @@ constexpr double to_rad(double deg)
 	return deg * M_PI / 180.0;
 }
 
-const Vec3 norm{0.0, 0.5*sqrt(2.0), -0.5*sqrt(2.0)};
+const Vec3 norm{0.0, 0.5*std::sqrt(2.0), -0.5*std::sqrt(2.0)};
 
 void
 calculate_yearly_incidence(
@@ -78,7 +79,11 @@ calculate_yearly_incidence(
 	}
 }
 
-void create_if_compute(VkPhysicalDevice pd, std::vector<ShadowProcessor>& procs)
+static void
+create_if_compute(
+	VkPhysicalDevice pd,
+	std::vector<ShadowProcessor>& procs,
+	const aiScene *scene)
 {
 	// Query queue capabilities:
 	uint32_t num_qf;
@@ -91,7 +96,6 @@ void create_if_compute(VkPhysicalDevice pd, std::vector<ShadowProcessor>& procs)
 	std::vector<VkDeviceQueueCreateInfo> used_qf;
 	used_qf.reserve(num_qf);
 
-	uint32_t total_queue_count = 0;
 	std::vector<float> priorities;
 	for(uint32_t i = 0; i < num_qf; ++i) {
 		// Queue family is not for compute, skip.
@@ -114,8 +118,6 @@ void create_if_compute(VkPhysicalDevice pd, std::vector<ShadowProcessor>& procs)
 			.queueCount = qfp[i].queueCount
 			// We set pQueuePriorities, because the pointer might change.
 		});
-
-		total_queue_count += qfp[i].queueCount;
 	}
 
 	// Set pQueuePriorities:
@@ -140,16 +142,20 @@ void create_if_compute(VkPhysicalDevice pd, std::vector<ShadowProcessor>& procs)
 	);
 
 	// Retrieve que requested queues from the newly created device:
-	std::vector<VkQueue> queues;
-	queues.reserve(total_queue_count);
+	std::vector<std::pair<uint32_t, std::vector<VkQueue>>> qfs;
+	qfs.reserve(num_qf);
 	for(auto& qf: used_qf) {
+		qfs.emplace_back();
+		qfs.back().first = qf.queueFamilyIndex;
+		auto& queues = qfs.back().second;
+
 		for(uint32_t i = 0; i < qf.queueCount; ++i) {
 			queues.emplace_back();
 			vkGetDeviceQueue(d.get(), qf.queueFamilyIndex, i, &queues.back());
 		}
 	}
 
-	procs.emplace_back(std::move(d), std::move(queues));
+	procs.emplace_back(pd, std::move(d), std::move(qfs), scene);
 }
 
 UVkInstance initialize_vulkan()
@@ -177,7 +183,8 @@ UVkInstance initialize_vulkan()
 	return vk;
 }
 
-std::vector<ShadowProcessor> create_procs_from_devices(VkInstance vk)
+static std::vector<ShadowProcessor>
+create_procs_from_devices(VkInstance vk, const aiScene *scene)
 {
 	std::vector<ShadowProcessor> processors;
 
@@ -194,7 +201,7 @@ std::vector<ShadowProcessor> create_procs_from_devices(VkInstance vk)
 		std::cout << props.deviceName << ' '
 			<< props.deviceType << std::endl;
 
-		create_if_compute(pd, processors);
+		create_if_compute(pd, processors, scene);
 	}
 
 	return processors;
@@ -202,17 +209,20 @@ std::vector<ShadowProcessor> create_procs_from_devices(VkInstance vk)
 
 int main(int argc, char *argv[])
 {
-	if(argc < 3) {
-		std::cout << "Please provide latitude and longitude.\n";
+	if(argc < 4) {
+		std::cout << "Please provide latitude, longitude and 3D model file.\n";
 		exit(1);
 	}
 	double lat = atof(argv[1]);
 	double lon = atof(argv[2]);
+	auto model_importer = load_scene(argv[3]);
+
+	auto scene = model_importer->GetScene();
 
 	UVkInstance vk = initialize_vulkan();
 
 	std::vector<ShadowProcessor> ps =
-		create_procs_from_devices(vk.get());
+		create_procs_from_devices(vk.get(), scene);
 
 	calculate_yearly_incidence(lat, lon, 0, ps);
 
