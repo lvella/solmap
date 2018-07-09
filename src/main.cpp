@@ -12,12 +12,14 @@
 #include "shadow_processor.hpp"
 #include "scene_loader.hpp"
 
-constexpr double to_deg(double rad)
+template <typename F>
+constexpr F to_deg(F rad)
 {
 	return rad * 180.0 / M_PI;
 }
 
-constexpr double to_rad(double deg)
+template <typename F>
+constexpr F to_rad(F deg)
 {
 	return deg * M_PI / 180.0;
 }
@@ -26,7 +28,7 @@ const Vec3 norm{0.0, 0.5*std::sqrt(2.0), -0.5*std::sqrt(2.0)};
 
 void
 calculate_yearly_incidence(
-	double latitude, double longitude, double altitude,
+	real latitude, real longitude, real altitude,
 	std::vector<ShadowProcessor> &processors
 )
 {
@@ -213,8 +215,8 @@ int main(int argc, char *argv[])
 		std::cout << "Please provide latitude, longitude and 3D model file.\n";
 		exit(1);
 	}
-	double lat = atof(argv[1]);
-	double lon = atof(argv[2]);
+	real lat = atof(argv[1]);
+	real lon = atof(argv[2]);
 	auto model_importer = load_scene(argv[3]);
 
 	auto scene = model_importer->GetScene();
@@ -235,11 +237,11 @@ int main(int argc, char *argv[])
 
 	Vec3 best_dir = glm::normalize(total);
 
-	double best_alt = std::acos(best_dir.y);
+	real best_alt = std::acos(best_dir.y);
 
 	// Project total to the surface plane:
 	Vec3 plane_dir{total.x, 0.0, total.z};
-	double best_az = std::acos(glm::dot(Vec3{0, 0, -1}, plane_dir)
+	real best_az = std::acos(glm::dot(Vec3{0, 0, -1}, plane_dir)
 		/ glm::length(plane_dir));
 
 	std::cout << "Best placement for latitude "

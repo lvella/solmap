@@ -1,5 +1,6 @@
 #pragma once
 
+#include "float.hpp"
 extern "C" {
 #include "sun_position.h"
 }
@@ -7,7 +8,7 @@ extern "C" {
 class SunSequence
 {
 public:
-	SunSequence(double latitude, double longitude, double elevation=0)
+	SunSequence(real latitude, real longitude, real elevation=0)
 	{
 		poy = create_pos_over_year(latitude, longitude, elevation);
 	}

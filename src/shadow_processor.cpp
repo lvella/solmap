@@ -138,7 +138,7 @@ void ShadowProcessor::process(const AngularPosition& p)
 	//           |
 	//           |
 	//        +z, S
-	double c = cos(p.alt);
+	real c = std::cos(p.alt);
 
 	Vec3 sun{
 		std::sin(p.az) * c,
