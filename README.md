@@ -14,9 +14,18 @@ error, because I don't necessarily start a day with sun's altitude
 at zero, but at anywhere from zero to 5 minutes from that point.
 
 This could be a much simpler Python script, instead of this convoluted
-C++ threaded program, but this is a work in progress, and must eventually
-do something much crazier.
+C++ threaded program, but this is a work in progress. Eventually, it
+will use Vulkan GPU interface to calculate the solar incidence over the
+surface of the 3D model provided as input.
 
 ## Dependencies
 
-You need Python 3 with CFFI to build, and PyEphem on Python path to run.
+To build, you need:
+ - Python 3 with CFFI, for Python interface;
+ - GLM library, for linear algebra.
+
+To run, you need:
+ - Python 3 with CFFI;
+ - PyEphem on your Python path, for astronomical sun positioning;
+ - Vulkan, for GPU access;
+ - Assimp, to load 3D models.
