@@ -217,14 +217,13 @@ int main(int argc, char *argv[])
 	}
 	real lat = atof(argv[1]);
 	real lon = atof(argv[2]);
-	auto model_importer = load_scene(argv[3]);
-
-	auto scene = model_importer->GetScene();
 
 	UVkInstance vk = initialize_vulkan();
 
 	std::vector<ShadowProcessor> ps =
-		create_procs_from_devices(vk.get(), scene);
+		create_procs_from_devices(vk.get(),
+		load_scene(argv[3])->GetScene()
+	);
 
 	calculate_yearly_incidence(lat, lon, 0, ps);
 
