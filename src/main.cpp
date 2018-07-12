@@ -82,7 +82,7 @@ calculate_yearly_incidence(
 }
 
 static void
-create_if_compute(
+create_if_has_graphics(
 	VkPhysicalDevice pd,
 	std::vector<ShadowProcessor>& procs,
 	const aiScene *scene)
@@ -101,7 +101,7 @@ create_if_compute(
 	std::vector<float> priorities;
 	for(uint32_t i = 0; i < num_qf; ++i) {
 		// Queue family is not for compute, skip.
-		if(!(qfp[i].queueFlags & VK_QUEUE_COMPUTE_BIT)) {
+		if(!(qfp[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
 			continue;
 		}
 
@@ -203,7 +203,7 @@ create_procs_from_devices(VkInstance vk, const aiScene *scene)
 		std::cout << props.deviceName << ' '
 			<< props.deviceType << std::endl;
 
-		create_if_compute(pd, processors, scene);
+		create_if_has_graphics(pd, processors, scene);
 	}
 
 	return processors;
