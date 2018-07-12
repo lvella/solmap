@@ -27,5 +27,5 @@ To build, you need:
 To run, you need:
  - Python 3 with CFFI;
  - PyEphem on your Python path, for astronomical sun positioning;
- - Vulkan, for GPU access;
- - Assimp, to load 3D models.
+ - Vulkan library, for GPU access;
+ - Assimp library, to load 3D models.
