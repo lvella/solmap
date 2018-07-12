@@ -87,16 +87,15 @@ MeshBuffers::MeshBuffers(VkDevice device,
 		// In the process, scale it so it will always stay
 		// within the render area. Since we know all the points
 		// are within [-1, 1], the biggest lenth possible is 2*sqrt(3)
-		// (the diagonal of a cube). Thus, by scalig by 1/sqrt(3), we
-		// ensure que biggest lenght fits in the [-1, 1] square of
-		// the render area.
+		// (the diagonal of a cube with L = 2). Thus, by scalig by
+		// 1/sqrt(3), we ensure que biggest lenght fits in the [-1, 1]
+		// square of the render area.
 		const real factor = 1.0 / std::sqrt(3.0);
 		MemMapper map(device, vertex.mem.get());
-		auto ptr = map.get<real (*)[3]>();
+		real *ptr = map.get<real*>();
 		for(uint32_t i = 0; i < mesh->mNumVertices; ++i) {
-			const auto v = factor * mesh->mVertices[i];
 			for(uint32_t j = 0; j < 3; ++j) {
-				ptr[i][j] = v[j];
+				ptr[i*3 + j] = factor * mesh->mVertices[i][j];
 			}
 		}
 	}
