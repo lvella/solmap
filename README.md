@@ -22,7 +22,9 @@ surface of the 3D model provided as input.
 
 To build, you need:
  - Python 3 with CFFI, for Python interface;
- - GLM library, for linear algebra.
+ - GLM library, for linear algebra;
+ - glslc command line tool, from shaderc package, to compile GLSL shaders
+into Vulkan's SPIR-V bytecode.
 
 To run, you need:
  - Python 3 with CFFI;

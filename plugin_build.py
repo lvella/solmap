@@ -2,7 +2,7 @@
 import cffi
 ffibuilder = cffi.FFI()
 
-with open('src/sun_position.h') as f:
+with open('src-host/sun_position.h') as f:
     data = ''.join([line for line in f if not line.startswith('#')])
     ffibuilder.embedding_api(data)
 

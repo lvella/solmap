@@ -5,6 +5,13 @@
 
 static const uint32_t frame_size = 2048;
 
+static void load_shader()
+{
+	static const uint32_t shader_data[] =
+		#include "depth-map.vert.inc"
+	;
+}
+
 static void create_render_pipeline()
 {
 	// Vertex data description:
