@@ -3,6 +3,113 @@
 #include "vk_manager.hpp"
 #include "shadow_processor.hpp"
 
+static const uint32_t frame_size = 2048;
+
+static void create_render_pipeline()
+{
+	// Vertex data description:
+	VkVertexInputBindingDescription vibd {
+		0,
+		3 * sizeof(real),
+		VK_VERTEX_INPUT_RATE_VERTEX
+	};
+
+	// Position attribute in vertex data:
+	VkVertexInputAttributeDescription viad {
+		0,
+		0,
+		VK_FORMAT_R32G32B32_SFLOAT,
+		0,
+	};
+
+	// Vertex input description:
+	VkPipelineVertexInputStateCreateInfo pvis {
+		VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&vibd,
+		1,
+		&viad
+	};
+
+	// Primitive assembly description
+	VkPipelineInputAssemblyStateCreateInfo pias {
+		VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		VK_FALSE
+	};
+
+	VkViewport viewport {
+		0.0,
+		0.0,
+		frame_size,
+		frame_size,
+		0.0,
+		1.0
+	};
+
+	VkRect2D scissor = {
+		{0, 0},
+		{frame_size, frame_size}
+	};
+
+	VkPipelineViewportStateCreateInfo pvs {
+		VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&viewport,
+		1,
+		&scissor
+	};
+
+	VkPipelineRasterizationStateCreateInfo prs {
+		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_FALSE,
+		VK_FALSE,
+		VK_POLYGON_MODE_FILL,
+		VK_CULL_MODE_BACK_BIT,
+		VK_FRONT_FACE_COUNTER_CLOCKWISE,
+		VK_FALSE,
+		0.0,
+		0.0,
+		0.0,
+		0.0
+	};
+
+	VkPipelineMultisampleStateCreateInfo pms {
+		VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_FALSE,
+		1.0,
+		nullptr,
+		VK_FALSE,
+		VK_FALSE
+	};
+
+	VkPipelineDepthStencilStateCreateInfo pdss {
+		VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_TRUE,
+		VK_TRUE,
+		VK_COMPARE_OP_LESS,
+		VK_FALSE,
+		VK_FALSE,
+		{},
+		{},
+		0.0,
+		1.0
+	};
+}
+
 Buffer::Buffer(VkDevice d,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
 	VkBufferUsageFlags usage, uint32_t size)
