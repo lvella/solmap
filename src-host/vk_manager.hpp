@@ -237,3 +237,8 @@ using UVkGraphicsPipeline = ManagedDPVk<
 	vkCreateGraphicsPipelines,
 	vkDestroyPipeline
 >;
+
+using UVkImage = ManagedDPVk<
+	vkCreateImage,
+	vkDestroyImage
+>;

@@ -46,6 +46,10 @@ private:
 	std::vector<VkQueue> qs;
 
 	std::vector<MeshBuffers> meshes;
+
+	UVkImage depth_image;
+	UVkDeviceMemory depth_image_mem;
+	//UVkImageView depth_image_view;
 };
 
 // If moved, the only valid operation is destruction.
@@ -86,8 +90,8 @@ private:
 
 	UVkDevice d;
 	UVkShaderModule vert_shader;
-	UVkPipelineLayout pipeline_layout;
 	UVkRenderPass render_pass;
+	UVkPipelineLayout pipeline_layout;
 	UVkGraphicsPipeline pipeline;
 
 	std::vector<QueueFamilyManager> qfs;
