@@ -132,7 +132,7 @@ create_if_has_graphics(
 		return;
 	}
 
-	UVkDevice d = create_vk<vkCreateDevice, vkDestroyDevice>(VkDeviceCreateInfo{
+	UVkDevice d{VkDeviceCreateInfo{
 			VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 			nullptr,
 			0,
@@ -141,7 +141,7 @@ create_if_has_graphics(
 			0, nullptr,
 			nullptr
 		}, pd
-	);
+	};
 
 	// Retrieve que requested queues from the newly created device:
 	std::vector<std::pair<uint32_t, std::vector<VkQueue>>> qfs;
@@ -165,8 +165,7 @@ UVkInstance initialize_vulkan()
 	const char *layers[] = {
 		"VK_LAYER_LUNARG_standard_validation"
 	};
-	UVkInstance vk = create_vk<vkCreateInstance, vkDestroyInstance>(
-		VkInstanceCreateInfo{
+	UVkInstance vk{VkInstanceCreateInfo{
 			VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 			nullptr,
 			0,
@@ -181,7 +180,7 @@ UVkInstance initialize_vulkan()
 			0,
 			nullptr
 		}
-	);
+	};
 	return vk;
 }
 

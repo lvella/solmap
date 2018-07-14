@@ -7,10 +7,8 @@ static const uint32_t frame_size = 2048;
 
 Buffer::Buffer(VkDevice d,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
-	VkBufferUsageFlags usage, uint32_t size)
-{
-	buf = create_vk_with_destroy_param<vkCreateBuffer, vkDestroyBuffer>(
-		d, VkBufferCreateInfo{
+	VkBufferUsageFlags usage, uint32_t size):
+	buf{VkBufferCreateInfo{
 			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 			nullptr,
 			0,
@@ -19,9 +17,9 @@ Buffer::Buffer(VkDevice d,
 			VK_SHARING_MODE_EXCLUSIVE,
 			0,
 			nullptr
-		}
-	);
-
+		}, d
+	}
+{
 	// Allocate the memory for the buffer from a suitable heap.
 	VkMemoryRequirements mem_reqs;
 	vkGetBufferMemoryRequirements(d, buf.get(), &mem_reqs);
@@ -60,14 +58,13 @@ Buffer::Buffer(VkDevice d,
 	}
 
 	// Allocate the memory:
-	mem = create_vk_with_destroy_param<vkAllocateMemory, vkFreeMemory>(
-		d, VkMemoryAllocateInfo{
+	mem = UVkDeviceMemory{VkMemoryAllocateInfo{
 			VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
 			nullptr,
 			mem_reqs.size,
 			mtype
-		}
-	);
+		}, d
+	};
 
 	// Associate it with the buffer:
 	vkBindBufferMemory(d, buf.get(), mem.get(), 0);
@@ -166,15 +163,13 @@ void ShadowProcessor::create_render_pipeline()
 		#include "depth-map.vert.inc"
 	;
 
-	vert_shader = create_vk_with_destroy_param<
-		vkCreateShaderModule, vkDestroyShaderModule
-	> (d.get(), VkShaderModuleCreateInfo {
+	vert_shader = UVkShaderModule(VkShaderModuleCreateInfo {
 		VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
 		nullptr,
 		0,
 		sizeof(shader_data),
 		shader_data
-	});
+	}, d.get());
 
 	const VkPipelineShaderStageCreateInfo pss {
 		VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -300,10 +295,7 @@ void ShadowProcessor::create_render_pipeline()
 		0
 	};
 
-	pipeline_layout = create_vk_with_destroy_param<
-		vkCreatePipelineLayout,
-		vkDestroyPipelineLayout
-	>(d.get(), VkPipelineLayoutCreateInfo{
+	pipeline_layout = UVkPipelineLayout(VkPipelineLayoutCreateInfo{
 		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		nullptr,
 		0,
@@ -311,7 +303,7 @@ void ShadowProcessor::create_render_pipeline()
 		nullptr,
 		1,
 		&pcr
-	});
+	}, d.get());
 
 	// Depth buffer attachment:
 	const VkAttachmentDescription dbad {
@@ -347,10 +339,7 @@ void ShadowProcessor::create_render_pipeline()
 		nullptr
 	};
 
-	render_pass = create_vk_with_destroy_param<
-		vkCreateRenderPass,
-		vkDestroyRenderPass
-	>(d.get(), VkRenderPassCreateInfo {
+	render_pass = UVkRenderPass(VkRenderPassCreateInfo {
 		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
 		nullptr,
 		0,
@@ -360,7 +349,7 @@ void ShadowProcessor::create_render_pipeline()
 		&sd,
 		0,
 		nullptr
-	});
+	}, d.get());
 
 	// TODO: to be continued...
 	// create the graphics pipeline

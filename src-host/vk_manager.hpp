@@ -24,6 +24,7 @@ private:
     }
 };
 
+// Throws if parameter is different from success.
 void chk_vk(VkResult err);
 
 // Memory mapping guard. Flushes and unmap when destroyed.
@@ -71,7 +72,7 @@ private:
     void *data;
 };
 
-// Find the last argument type of a function type.
+// Find the last argument type of a function pointer type.
 // Adapted from https://stackoverflow.com/a/46560993/578749
 template<typename T>
 struct tag
@@ -88,110 +89,146 @@ struct select_last<R(*)(Ts...)>
     using type = typename decltype((tag<Ts>{}, ...))::type;
 };
 
-// Creates a Vulkan object, and return it inside an unique_ptr.
-// Throws VulkanCreationError if VkResult is not VK_SUCCESS.
-template <auto CreateFn, auto DestroyFn, typename CreateInfo, typename... Args>
-auto create_vk(const CreateInfo& info, Args... args)
+// Find the first argument type of a function pointer type.
+template<typename F>
+struct select_first;
+
+template<typename R, typename T, typename... Ts>
+struct select_first<R(*)(T, Ts...)>
 {
-	// Get the type created by CreateFn, which is the base type of
-	// of the last parameter: a pointer to the created object.
-	using T = typename std::remove_pointer<
+    using type = T;
+};
+
+// Base class for automatic manager of Vulkan objects.
+// The destructor is provided by the derived class.
+template <auto CreateFn>
+class Manager
+{
+public:
+    using ManagedType = typename std::remove_pointer<
 	    typename select_last<decltype(CreateFn)>::type
 	>::type;
 
+    Manager() = default;
+
+    ManagedType get() const
+    {
+	return obj;
+    }
+
+    operator bool () const
+    {
+	return bool{obj};
+    }
+
+    // Non-copyable:
+    Manager(const Manager&) = delete;
+    void operator=(const Manager&) = delete;
+
+    // Movable
+    Manager& operator=(Manager&& other)
+    {
+	obj = other.obj;
+	other.obj = nullptr;
+	return *this;
+    }
+
+protected:
+    // Only constructable by base class:
+    template<typename CreateInfo, typename... Args>
+    Manager(const CreateInfo& info, Args... args)
+    {
 	// Create the object.
-	T obj;
 	chk_vk(CreateFn(args..., &info, nullptr, &obj));
+    }
 
-	// By Vulkan specification, T is a pointer, so we manage it
-	// with std::unique_ptr. We create a deleter class for this
-	// case.
-	struct Deleter {
-		void operator()(T obj) {
-			DestroyFn(obj, nullptr);
-		}
-	};
-	return std::unique_ptr<
-	    typename std::remove_pointer<T>::type,
-	    Deleter
-	>{obj};
-}
+    Manager(Manager&& other)
+    {
+	*this = std::move(other);
+    }
 
-// Same as before, but destructor takes an optional parameter.
-template <auto CreateFn, auto DestroyFn,
-    typename Param, typename CreateInfo>
-auto create_vk_with_destroy_param(Param param,
-	const CreateInfo& info)
+    ManagedType obj;
+};
+
+
+// Manages a Vulkan object, pretty much like an
+// std::unique_ptr would do, but taking the creation
+// info as reference, for convenience.
+template <auto CreateFn, auto DestroyFn>
+class ManagedVk:
+    public Manager<CreateFn>
 {
-	// Get the type created by CreateFn, which is the base type of
-	// of the last parameter: a pointer to the created object.
-	using T = typename std::remove_pointer<
-	    typename select_last<decltype(CreateFn)>::type
-	>::type;
+public:
+    ManagedVk() = default;
 
-	// Create the object.
-	T obj;
-	chk_vk(CreateFn(param, &info, nullptr, &obj));
+    template<typename... Args>
+    ManagedVk(Args... args):
+	Manager<CreateFn>{args...}
+    {}
 
-	// By Vulkan specification, T is a pointer, so we manage it
-	// with std::unique_ptr.
-	struct Deleter {
-		void operator()(T obj) {
-			DestroyFn(param, obj, nullptr);
-		}
+    ManagedVk(ManagedVk&&) = default;
+    ManagedVk& operator=(ManagedVk&&) = default;
 
-		Param param;
-	};
+    ~ManagedVk()
+    {
+	// I will not count on all Vulkan destroy functions
+	// accepting nullptr as input, so I check if not null.
+	if(this->obj) {
+	    DestroyFn(this->obj, nullptr);
+	}
+    }
+};
 
-	return std::unique_ptr<
-	    typename std::remove_pointer<T>::type,
-	    Deleter
-	>{obj, Deleter{param}};
-}
+// Manages a Vulkan object whose destructor takes the
+// same first argument as the constructor.
+template <auto CreateFn, auto DestroyFn>
+class ManagedDPVk:
+    public Manager<CreateFn>
+{
+public:
+    using DestroyParamType = typename select_first<decltype(DestroyFn)>::type;
+
+    ManagedDPVk() = default;
+
+    template<typename CreateInfo, typename... Args>
+    ManagedDPVk(const CreateInfo& info, DestroyParamType dparam, Args... args):
+	Manager<CreateFn>{info, dparam, args...},
+	destroy_param(dparam)
+    {}
+
+    ManagedDPVk(ManagedDPVk&&) = default;
+    ManagedDPVk& operator=(ManagedDPVk&&) = default;
+
+    ~ManagedDPVk()
+    {
+	// I will not count on all Vulkan destroy functions
+	// accepting nullptr as input, so I check if not null.
+	if(this->obj) {
+	    DestroyFn(destroy_param, this->obj, nullptr);
+	}
+    }
+
+private:
+    DestroyParamType destroy_param;
+};
 
 // Naming the managed types, for convenience.
-using UVkInstance = decltype(
-	create_vk<vkCreateInstance, vkDestroyInstance>(VkInstanceCreateInfo{})
-);
+using UVkInstance = ManagedVk<vkCreateInstance, vkDestroyInstance>;
 
-using UVkDevice = decltype(
-	create_vk<
-	    vkCreateDevice,
-	    vkDestroyDevice
-	>(VkDeviceCreateInfo{}, VkPhysicalDevice{})
-);
+using UVkDevice = ManagedVk<vkCreateDevice, vkDestroyDevice>;
 
-using UVkBuffer = decltype(
-	create_vk_with_destroy_param<
-	    vkCreateBuffer,
-	    vkDestroyBuffer
-	>(VkDevice{}, VkBufferCreateInfo{})
-);
+using UVkBuffer = ManagedDPVk<vkCreateBuffer, vkDestroyBuffer>;
 
-using UVkDeviceMemory = decltype(
-	create_vk_with_destroy_param<
-	    vkAllocateMemory,
-	    vkFreeMemory
-	>(VkDevice{}, VkMemoryAllocateInfo{})
-);
+using UVkDeviceMemory = ManagedDPVk<vkAllocateMemory, vkFreeMemory>;
 
-using UVkShaderModule = decltype(
-	create_vk_with_destroy_param<
-		vkCreateShaderModule,
-		vkDestroyShaderModule
-	> (VkDevice{}, VkShaderModuleCreateInfo{})
-);
+using UVkShaderModule = ManagedDPVk<
+    vkCreateShaderModule,
+    vkDestroyShaderModule
+>;
 
-using UVkPipelineLayout = decltype(
-	create_vk_with_destroy_param<
-		vkCreatePipelineLayout,
-		vkDestroyPipelineLayout
-	>(VkDevice{}, VkPipelineLayoutCreateInfo{})
-);
+using UVkPipelineLayout = ManagedDPVk<
+    vkCreatePipelineLayout,
+    vkDestroyPipelineLayout
+>;
 
-using UVkRenderPass = decltype(
-	create_vk_with_destroy_param<
-		vkCreateRenderPass,
-		vkDestroyRenderPass
-	>(VkDevice{}, VkRenderPassCreateInfo{})
-);
+using UVkRenderPass = ManagedDPVk<vkCreateRenderPass, vkDestroyRenderPass>;
