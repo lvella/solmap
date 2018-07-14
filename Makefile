@@ -2,8 +2,7 @@ CC = clang-6.0
 CXX = clang++-6.0 -std=c++17
 GLSLC = glslc
 
-FLAGS = -g -pthread
-LIBS = $(shell pkg-config python3 --libs) -lvulkan -lassimp
+OPTFLAGS = -g
 
 MODULES = \
 	main \
@@ -21,7 +20,8 @@ DDIR = src-device
 BDIR = build
 BINCDIR = build/include
 
-.PHONY: clean compilerflags
+LIBS = $(shell pkg-config python3 --libs) -lvulkan -lassimp
+FLAGS = ${OPTFLAGS} -pthread -I${BINCDIR}
 
 INC_SHADERS = $(addprefix ${BINCDIR}/,$(SHADERS:=.inc))
 OBJS = $(addprefix ${BDIR}/,$(MODULES:=.o))
@@ -32,7 +32,7 @@ ${BDIR}/solmap: ${INC_SHADERS} ${OBJS}
 -include $(OBJS:o=d)
 
 ${BDIR}/%.o: ${SDIR}/%.cpp | ${BDIR}
-	${CXX} -c -MMD -I${BINCDIR} ${FLAGS} ${SDIR}/$*.cpp -o ${BDIR}/$*.o
+	${CXX} -c -MMD ${FLAGS} ${SDIR}/$*.cpp -o ${BDIR}/$*.o
 
 ${BDIR}/sun_position.o: ${BDIR}/sun_position.c
 	${CC} -c `pkg-config python3 --cflags` -I${SDIR} ${FLAGS} ${BDIR}/sun_position.c -o ${BDIR}/sun_position.o
@@ -52,6 +52,11 @@ ${BDIR}:
 
 ${BINCDIR}: | ${BDIR}
 	mkdir ${BINCDIR}
+
+.PHONY: clean compilerflags
+
+compilerflags:
+	@echo ${FLAGS}
 
 clean: | ${BDIR}
 	rm -r ${BDIR}

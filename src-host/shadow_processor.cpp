@@ -5,118 +5,6 @@
 
 static const uint32_t frame_size = 2048;
 
-static void load_shader()
-{
-	static const uint32_t shader_data[] =
-		#include "depth-map.vert.inc"
-	;
-}
-
-static void create_render_pipeline()
-{
-	// Vertex data description:
-	VkVertexInputBindingDescription vibd {
-		0,
-		3 * sizeof(real),
-		VK_VERTEX_INPUT_RATE_VERTEX
-	};
-
-	// Position attribute in vertex data:
-	VkVertexInputAttributeDescription viad {
-		0,
-		0,
-		VK_FORMAT_R32G32B32_SFLOAT,
-		0,
-	};
-
-	// Vertex input description:
-	VkPipelineVertexInputStateCreateInfo pvis {
-		VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		nullptr,
-		0,
-		1,
-		&vibd,
-		1,
-		&viad
-	};
-
-	// Primitive assembly description
-	VkPipelineInputAssemblyStateCreateInfo pias {
-		VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-		nullptr,
-		0,
-		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-		VK_FALSE
-	};
-
-	VkViewport viewport {
-		0.0,
-		0.0,
-		frame_size,
-		frame_size,
-		0.0,
-		1.0
-	};
-
-	VkRect2D scissor = {
-		{0, 0},
-		{frame_size, frame_size}
-	};
-
-	VkPipelineViewportStateCreateInfo pvs {
-		VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-		nullptr,
-		0,
-		1,
-		&viewport,
-		1,
-		&scissor
-	};
-
-	VkPipelineRasterizationStateCreateInfo prs {
-		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-		nullptr,
-		0,
-		VK_FALSE,
-		VK_FALSE,
-		VK_POLYGON_MODE_FILL,
-		VK_CULL_MODE_BACK_BIT,
-		VK_FRONT_FACE_COUNTER_CLOCKWISE,
-		VK_FALSE,
-		0.0,
-		0.0,
-		0.0,
-		0.0
-	};
-
-	VkPipelineMultisampleStateCreateInfo pms {
-		VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-		nullptr,
-		0,
-		VK_SAMPLE_COUNT_1_BIT,
-		VK_FALSE,
-		1.0,
-		nullptr,
-		VK_FALSE,
-		VK_FALSE
-	};
-
-	VkPipelineDepthStencilStateCreateInfo pdss {
-		VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-		nullptr,
-		0,
-		VK_TRUE,
-		VK_TRUE,
-		VK_COMPARE_OP_LESS,
-		VK_FALSE,
-		VK_FALSE,
-		{},
-		{},
-		0.0,
-		1.0
-	};
-}
-
 Buffer::Buffer(VkDevice d,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
 	VkBufferUsageFlags usage, uint32_t size)
@@ -243,6 +131,7 @@ QueueFamilyManager::QueueFamilyManager(
 	for(unsigned i = 0; i < scene->mNumMeshes; ++i) {
 		meshes.emplace_back(device, mem_props, scene->mMeshes[i]);
 	}
+
 }
 
 ShadowProcessor::ShadowProcessor(
@@ -265,6 +154,216 @@ ShadowProcessor::ShadowProcessor(
 		qfs.emplace_back(d.get(), mem_props, q.first,
 			std::move(q.second), scene);
 	}
+
+	// Create depth buffer rendering pipeline:
+	create_render_pipeline();
+}
+
+void ShadowProcessor::create_render_pipeline()
+{
+	// Create the vertex shader:
+	static const uint32_t shader_data[] =
+		#include "depth-map.vert.inc"
+	;
+
+	vert_shader = create_vk_with_destroy_param<
+		vkCreateShaderModule, vkDestroyShaderModule
+	> (d.get(), VkShaderModuleCreateInfo {
+		VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		nullptr,
+		0,
+		sizeof(shader_data),
+		shader_data
+	});
+
+	const VkPipelineShaderStageCreateInfo pss {
+		VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SHADER_STAGE_VERTEX_BIT,
+		vert_shader.get(),
+		"main",
+		nullptr
+	};
+
+	// Vertex data description:
+	const VkVertexInputBindingDescription vibd {
+		0,
+		3 * sizeof(real),
+		VK_VERTEX_INPUT_RATE_VERTEX
+	};
+
+	// Position attribute in vertex data:
+	const VkVertexInputAttributeDescription viad {
+		0,
+		0,
+		VK_FORMAT_R32G32B32_SFLOAT,
+		0,
+	};
+
+	// Vertex input description:
+	const VkPipelineVertexInputStateCreateInfo pvis {
+		VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&vibd,
+		1,
+		&viad
+	};
+
+	// Primitive assembly description
+	const VkPipelineInputAssemblyStateCreateInfo pias {
+		VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+		VK_FALSE
+	};
+
+	// Viweport creation:
+	const VkViewport viewport {
+		0.0,
+		0.0,
+		frame_size,
+		frame_size,
+		0.0,
+		1.0
+	};
+
+	const VkRect2D scissor = {
+		{0, 0},
+		{frame_size, frame_size}
+	};
+
+	const VkPipelineViewportStateCreateInfo pvs {
+		VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&viewport,
+		1,
+		&scissor
+	};
+
+	// Rasterization configuration:
+	const VkPipelineRasterizationStateCreateInfo prs {
+		VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_FALSE,
+		VK_FALSE,
+		VK_POLYGON_MODE_FILL,
+		VK_CULL_MODE_BACK_BIT,
+		VK_FRONT_FACE_COUNTER_CLOCKWISE,
+		VK_FALSE,
+		0.0,
+		0.0,
+		0.0,
+		0.0
+	};
+
+	// Multisampling configuration:
+	const VkPipelineMultisampleStateCreateInfo pms {
+		VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_FALSE,
+		1.0,
+		nullptr,
+		VK_FALSE,
+		VK_FALSE
+	};
+
+	// Depth buffer configuration:
+	const VkPipelineDepthStencilStateCreateInfo pdss {
+		VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_TRUE,
+		VK_TRUE,
+		VK_COMPARE_OP_LESS,
+		VK_FALSE,
+		VK_FALSE,
+		{},
+		{},
+		0.0,
+		1.0
+	};
+
+	// Push constant used to push the orientation
+	// quaternion into the vertex shader.
+	const VkPushConstantRange pcr {
+		VK_SHADER_STAGE_VERTEX_BIT,
+		sizeof(Vec4),
+		0
+	};
+
+	pipeline_layout = create_vk_with_destroy_param<
+		vkCreatePipelineLayout,
+		vkDestroyPipelineLayout
+	>(d.get(), VkPipelineLayoutCreateInfo{
+		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		nullptr,
+		0,
+		0,
+		nullptr,
+		1,
+		&pcr
+	});
+
+	// Depth buffer attachment:
+	const VkAttachmentDescription dbad {
+		0,
+		VK_FORMAT_D32_SFLOAT,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_ATTACHMENT_LOAD_OP_CLEAR,
+		VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		// TODO: verify if this is correct:
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+	};
+
+	// Depth buffer attachment reference:
+	const VkAttachmentReference dbar {
+		0,
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+	};
+
+	// Only subpass in our render pass:
+	const VkSubpassDescription sd {
+		0,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		0,
+		nullptr,
+		0,
+		nullptr,
+		nullptr,
+		&dbar,
+		0,
+		nullptr
+	};
+
+	render_pass = create_vk_with_destroy_param<
+		vkCreateRenderPass,
+		vkDestroyRenderPass
+	>(d.get(), VkRenderPassCreateInfo {
+		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		&dbad,
+		1,
+		&sd,
+		0,
+		nullptr
+	});
+
+	// TODO: to be continued...
+	// create the graphics pipeline
 }
 
 void ShadowProcessor::process(const AngularPosition& p)

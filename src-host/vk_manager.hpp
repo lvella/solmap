@@ -174,3 +174,24 @@ using UVkDeviceMemory = decltype(
 	    vkFreeMemory
 	>(VkDevice{}, VkMemoryAllocateInfo{})
 );
+
+using UVkShaderModule = decltype(
+	create_vk_with_destroy_param<
+		vkCreateShaderModule,
+		vkDestroyShaderModule
+	> (VkDevice{}, VkShaderModuleCreateInfo{})
+);
+
+using UVkPipelineLayout = decltype(
+	create_vk_with_destroy_param<
+		vkCreatePipelineLayout,
+		vkDestroyPipelineLayout
+	>(VkDevice{}, VkPipelineLayoutCreateInfo{})
+);
+
+using UVkRenderPass = decltype(
+	create_vk_with_destroy_param<
+		vkCreateRenderPass,
+		vkDestroyRenderPass
+	>(VkDevice{}, VkRenderPassCreateInfo{})
+);

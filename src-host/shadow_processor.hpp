@@ -82,7 +82,13 @@ public:
 	}
 
 private:
+	void create_render_pipeline();
+
 	UVkDevice d;
+	UVkShaderModule vert_shader;
+	UVkPipelineLayout pipeline_layout;
+	UVkRenderPass render_pass;
+
 	std::vector<QueueFamilyManager> qfs;
 
 	Vec3 sum = {0,0,0};
