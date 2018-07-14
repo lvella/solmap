@@ -232,3 +232,8 @@ using UVkPipelineLayout = ManagedDPVk<
 >;
 
 using UVkRenderPass = ManagedDPVk<vkCreateRenderPass, vkDestroyRenderPass>;
+
+using UVkGraphicsPipeline = ManagedDPVk<
+	vkCreateGraphicsPipelines,
+	vkDestroyPipeline
+>;

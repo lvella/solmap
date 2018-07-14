@@ -88,6 +88,7 @@ private:
 	UVkShaderModule vert_shader;
 	UVkPipelineLayout pipeline_layout;
 	UVkRenderPass render_pass;
+	UVkGraphicsPipeline pipeline;
 
 	std::vector<QueueFamilyManager> qfs;
 

@@ -255,7 +255,7 @@ void ShadowProcessor::create_render_pipeline()
 		0.0,
 		0.0,
 		0.0,
-		0.0
+		1.0
 	};
 
 	// Multisampling configuration:
@@ -291,8 +291,8 @@ void ShadowProcessor::create_render_pipeline()
 	// quaternion into the vertex shader.
 	const VkPushConstantRange pcr {
 		VK_SHADER_STAGE_VERTEX_BIT,
-		sizeof(Vec4),
-		0
+		0,
+		sizeof(Vec4)
 	};
 
 	pipeline_layout = UVkPipelineLayout(VkPipelineLayoutCreateInfo{
@@ -351,8 +351,27 @@ void ShadowProcessor::create_render_pipeline()
 		nullptr
 	}, d.get());
 
-	// TODO: to be continued...
-	// create the graphics pipeline
+	pipeline = UVkGraphicsPipeline(VkGraphicsPipelineCreateInfo{
+		VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		nullptr,
+		0,
+		1,       // stageCount
+		&pss,    // pStages
+		&pvis,   // pVertexInputState
+		&pias,   // pInputAssemblyState
+		nullptr, // pTessellationState
+		&pvs,    // pViewportState
+		&prs,    // pRasterizationState
+		&pms,    // pMultisampleState
+		&pdss,   // pDepthStencilState
+		nullptr, // pColorBlendState
+		nullptr, // pDynamicState
+		pipeline_layout.get(), // layout
+		render_pass.get(),     // renderPass
+		0,                     // subpass
+		VK_NULL_HANDLE, // basePipelineHandle
+		-1              // basePipelineIndex
+	}, d.get(), nullptr, 1);
 }
 
 void ShadowProcessor::process(const AngularPosition& p)
