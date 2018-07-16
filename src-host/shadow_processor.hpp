@@ -29,6 +29,7 @@ struct MeshBuffers
 
 	Buffer vertex;
 	Buffer index;
+	uint32_t idx_count;
 };
 
 class QueueFamilyManager
@@ -41,6 +42,10 @@ public:
 		std::vector<VkQueue>&& queues,
 		const class aiScene* scene);
 
+	void create_command_buffer(
+		VkDevice d, VkRenderPass rp, VkPipeline pipeline
+	);
+
 private:
 	uint32_t qf_idx;
 	std::vector<VkQueue> qs;
@@ -49,7 +54,11 @@ private:
 
 	UVkImage depth_image;
 	UVkDeviceMemory depth_image_mem;
-	//UVkImageView depth_image_view;
+	UVkImageView depth_image_view;
+	UVkFramebuffer framebuffer;
+
+	UVkCommandPool command_pool;
+	UVkCommandBuffers cmd_bufs;
 };
 
 // If moved, the only valid operation is destruction.
@@ -87,6 +96,7 @@ public:
 
 private:
 	void create_render_pipeline();
+	void create_command_buffer();
 
 	UVkDevice d;
 	UVkShaderModule vert_shader;

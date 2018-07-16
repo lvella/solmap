@@ -5,6 +5,46 @@
 
 static const uint32_t frame_size = 2048;
 
+static uint32_t find_memory_heap(
+	const VkPhysicalDeviceMemoryProperties& mem_props,
+	uint32_t allowed,
+	VkMemoryPropertyFlags required,
+	VkMemoryPropertyFlags prefered)
+{
+	// Find a suitable heap with the requested properties:
+	uint32_t mtype = mem_props.memoryTypeCount;
+	for(uint32_t i = 0; i < mem_props.memoryTypeCount; ++i)
+	{
+		// Is the memory type suitable?
+		if (!(allowed & (1 << i))) {
+			continue;
+		}
+
+		// Is the memory visible?
+		if((mem_props.memoryTypes[i].propertyFlags
+			& required) != required)
+		{
+			continue;
+		}
+
+		// The memory is suitable, hold it.
+		mtype = i;
+
+		// The memory found is suitable, but is it of the preferable
+	       	// type? If so, we stop immediatelly, because we found the
+		// best memory type.
+		if((mem_props.memoryTypes[i].propertyFlags
+			& prefered) == prefered)
+		{
+			break;
+		}
+	}
+	if(mtype == mem_props.memoryTypeCount) {
+		throw std::runtime_error("No suitable memory type found.");
+	}
+	return mtype;
+}
+
 Buffer::Buffer(VkDevice d,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
 	VkBufferUsageFlags usage, uint32_t size):
@@ -25,37 +65,12 @@ Buffer::Buffer(VkDevice d,
 	vkGetBufferMemoryRequirements(d, buf.get(), &mem_reqs);
 
 	// Find a suitable buffer that the host can write:
-	uint32_t mtype;
-	uint32_t i = 0;
-	for(; i < mem_props.memoryTypeCount; ++i)
-	{
-		// Is the memory type suitable?
-		if (!(mem_reqs.memoryTypeBits & (1 << i))) {
-			continue;
-		}
-
-		// Is the memory visible?
-		if(!(mem_props.memoryTypes[i].propertyFlags
-			& VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT))
-		{
-			continue;
-		}
-
-		// The memory is suitable, hold it.
-		mtype = i;
-
-		// The memory found is suitable, but is it local to
-		// the device? If local, we stop immediatelly, because
-		// we prefer local memory for performance.
-		if((mem_props.memoryTypes[i].propertyFlags
-			& VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
-		{
-			break;
-		}
-	}
-	if(i == mem_props.memoryTypeCount) {
-		throw std::runtime_error("No suitable memory type found.");
-	}
+	uint32_t mtype = find_memory_heap(
+		mem_props,
+		mem_reqs.memoryTypeBits,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
 
 	// Allocate the memory:
 	mem = UVkDeviceMemory{VkMemoryAllocateInfo{
@@ -79,7 +94,8 @@ MeshBuffers::MeshBuffers(VkDevice device,
 		mesh->mNumVertices * 3 * sizeof(real)),
 	index(device, mem_props,
 		VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-		mesh->mNumFaces * 3 * sizeof(uint32_t))
+		mesh->mNumFaces * 3 * sizeof(uint32_t)),
+	idx_count(mesh->mNumFaces * 3)
 {
 	{
 		// Copy the vertex data.
@@ -129,6 +145,165 @@ QueueFamilyManager::QueueFamilyManager(
 		meshes.emplace_back(device, mem_props, scene->mMeshes[i]);
 	}
 
+	// Create the depth image, used rendering destination and output.
+	depth_image = UVkImage{VkImageCreateInfo{
+		VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		nullptr,
+		0,
+		VK_IMAGE_TYPE_2D, // imageType
+		VK_FORMAT_D32_SFLOAT, // format
+		{
+			frame_size, // width
+			frame_size, // height
+			1 // depth
+		}, // extent
+		1, // mipLevels
+		1, // arrayLayers
+		VK_SAMPLE_COUNT_1_BIT, // samples
+		VK_IMAGE_TILING_OPTIMAL, // tiling
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, // usage
+		VK_SHARING_MODE_EXCLUSIVE, // sharing
+		0, // queueFamilyIndexCount
+		nullptr, // pQueueFamilyIndices
+		VK_IMAGE_LAYOUT_UNDEFINED // initialLayout
+	}, device};
+
+	// Allocate depth image memory.
+	VkMemoryRequirements reqs;
+	vkGetImageMemoryRequirements(device, depth_image.get(), &reqs);
+
+	// Find a suitable heap. No specific needs, but prefer it to be local.
+	uint32_t mtype = find_memory_heap(
+		mem_props,
+		reqs.memoryTypeBits,
+		0,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	// Allocate the image memory
+	depth_image_mem = UVkDeviceMemory(VkMemoryAllocateInfo{
+		VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		nullptr,
+		reqs.size,
+		mtype
+	}, device);
+
+	// Bind the memory to the image
+	vkBindImageMemory(device, depth_image.get(), depth_image_mem.get(), 0);
+
+	// Create the image view:
+	depth_image_view = UVkImageView{VkImageViewCreateInfo{
+		VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		nullptr,
+		0,
+		depth_image.get(),
+		VK_IMAGE_VIEW_TYPE_2D,
+		VK_FORMAT_D32_SFLOAT,
+		{
+			VK_COMPONENT_SWIZZLE_IDENTITY,
+			VK_COMPONENT_SWIZZLE_IDENTITY,
+			VK_COMPONENT_SWIZZLE_IDENTITY,
+			VK_COMPONENT_SWIZZLE_IDENTITY
+		},
+		{
+			VK_IMAGE_ASPECT_DEPTH_BIT,
+			0, 1, 0, 1
+		}
+	}, device};
+}
+
+void QueueFamilyManager::create_command_buffer(
+	VkDevice d, VkRenderPass rp, VkPipeline pipeline)
+{
+	// Create the framebuffer:
+	auto at = depth_image_view.get();
+	framebuffer = UVkFramebuffer{VkFramebufferCreateInfo{
+		VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+		nullptr,
+		0,
+		rp,
+		1,
+		&at,
+		frame_size,
+		frame_size,
+		1
+	}, d};
+
+	command_pool = UVkCommandPool{VkCommandPoolCreateInfo{
+		VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+		nullptr,
+		0,
+		qf_idx
+	}, d};
+
+	// Allocate a single command buffer:
+	cmd_bufs = UVkCommandBuffers(d, VkCommandBufferAllocateInfo{
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		nullptr,
+		command_pool.get(),
+		VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+		1
+	});
+
+	// Start recording the commands in the command buffer.
+	VkCommandBufferBeginInfo cbbi{
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		nullptr,
+		0, // VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
+		nullptr
+	};
+	chk_vk(vkBeginCommandBuffer(cmd_bufs[0], &cbbi));
+
+	// Draw the depth buffer command:
+	VkClearValue cv;
+	cv.depthStencil = {1.0, 0};
+
+	VkRenderPassBeginInfo rpbi {
+		VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+		nullptr,
+		rp,
+		framebuffer.get(),
+		{
+			{0, 0},
+			{frame_size, frame_size}
+		},
+		1,
+		&cv
+	};
+	vkCmdBeginRenderPass(cmd_bufs[0], &rpbi, VK_SUBPASS_CONTENTS_INLINE);
+
+	// Bind the pipeline:
+	vkCmdBindPipeline(cmd_bufs[0], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+	// Bind the vertex buffer
+	std::vector<VkBuffer> vertexBuffers(meshes.size());
+	for(size_t i = 0; i < meshes.size(); ++i) {
+		vertexBuffers[i] = meshes[i].vertex.buf.get();
+	}
+	std::vector<VkDeviceSize> offsets(meshes.size(), 0);
+	vkCmdBindVertexBuffers(cmd_bufs[0], 0, meshes.size(),
+		vertexBuffers.data(), offsets.data());
+
+	// Draw things:
+	const VkDeviceSize zero_offset = 0;
+	for(auto& m: meshes) {
+		// Bind vertex buffer.
+		vkCmdBindVertexBuffers(cmd_bufs[0], 0, 1,
+			&m.vertex.buf.get(), &zero_offset);
+
+		// Bind index buffer.
+		vkCmdBindIndexBuffer(cmd_bufs[0],
+			m.index.buf.get(), 0, VK_INDEX_TYPE_UINT32);
+
+		// Draw the object:
+		vkCmdDrawIndexed(cmd_bufs[0], m.idx_count, 1, 0, 0, 0);
+	}
+
+	// End drawing stuff.
+	vkCmdEndRenderPass(cmd_bufs[0]);
+
+	// End command buffer.
+	chk_vk(vkEndCommandBuffer(cmd_bufs[0]));
 }
 
 ShadowProcessor::ShadowProcessor(
@@ -154,6 +329,12 @@ ShadowProcessor::ShadowProcessor(
 
 	// Create depth buffer rendering pipeline:
 	create_render_pipeline();
+
+	// Create framebuffers and command buffers:
+	for(auto& qf: qfs) {
+		qf.create_command_buffer(
+			d.get(), render_pass.get(), pipeline.get());
+	}
 }
 
 void ShadowProcessor::create_render_pipeline()

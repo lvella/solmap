@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cassert>
+
 #include <functional>
 #include <sstream>
 #include <memory>
@@ -72,6 +74,27 @@ private:
     void *data;
 };
 
+class UVkCommandBuffers
+{
+public:
+	UVkCommandBuffers(VkDevice d, const VkCommandBufferAllocateInfo& info);
+	UVkCommandBuffers() = default;
+
+	VkCommandBuffer operator[](uint32_t idx) const
+	{
+	    return bufs[idx];
+	}
+
+private:
+	struct Deleter {
+	    VkDevice d;
+	    VkCommandPool cp;
+	    uint32_t count;
+	    void operator()(const VkCommandBuffer* bufs);
+	};
+	std::unique_ptr<VkCommandBuffer[], Deleter> bufs;
+};
+
 // Find the last argument type of a function pointer type.
 // Adapted from https://stackoverflow.com/a/46560993/578749
 template<typename T>
@@ -111,7 +134,7 @@ public:
 
     Manager() = default;
 
-    ManagedType get() const
+    const ManagedType& get() const
     {
 	return obj;
     }
@@ -128,6 +151,7 @@ public:
     // Movable
     Manager& operator=(Manager&& other)
     {
+	assert(!obj);
 	obj = other.obj;
 	other.obj = nullptr;
 	return *this;
@@ -142,12 +166,13 @@ protected:
 	chk_vk(CreateFn(args..., &info, nullptr, &obj));
     }
 
-    Manager(Manager&& other)
+    Manager(Manager&& other):
+	obj{nullptr}
     {
 	*this = std::move(other);
     }
 
-    ManagedType obj;
+    ManagedType obj = nullptr;
 };
 
 
@@ -242,3 +267,9 @@ using UVkImage = ManagedDPVk<
 	vkCreateImage,
 	vkDestroyImage
 >;
+
+using UVkImageView = ManagedDPVk<vkCreateImageView, vkDestroyImageView>;
+
+using UVkFramebuffer = ManagedDPVk<vkCreateFramebuffer, vkDestroyFramebuffer>;
+
+using UVkCommandPool = ManagedDPVk<vkCreateCommandPool, vkDestroyCommandPool>;
