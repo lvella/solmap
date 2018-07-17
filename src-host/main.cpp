@@ -233,6 +233,8 @@ int main(int argc, char *argv[])
 		count += p.get_count();
 	}
 
+	std::cout << "Total positions considered: " << count << '\n';
+
 	Vec3 best_dir = glm::normalize(total);
 
 	real best_alt = std::acos(best_dir.y);

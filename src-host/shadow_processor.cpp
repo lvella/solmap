@@ -1,3 +1,6 @@
+#include <random>
+#include <fstream>
+
 #include <assimp/scene.h>
 #include <glm/glm.hpp>
 
@@ -151,7 +154,16 @@ QueueFamilyManager::QueueFamilyManager(
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	},
-	uniform_map{device, uniform_buf.mem.get()}
+	uniform_map{device, uniform_buf.mem.get()},
+	// TODO: temporary
+	d{device},
+	img_read_buf{device, mem_props,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		sizeof(float) * frame_size * frame_size,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	},
+	rnd{std::random_device{}()}
 {
 	// There may be multiple meshes in the loaded scene,
 	// load them all.
@@ -176,7 +188,8 @@ QueueFamilyManager::QueueFamilyManager(
 		1, // arrayLayers
 		VK_SAMPLE_COUNT_1_BIT, // samples
 		VK_IMAGE_TILING_OPTIMAL, // tiling
-		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, // usage
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+		| VK_IMAGE_USAGE_TRANSFER_SRC_BIT, // usage
 		VK_SHARING_MODE_EXCLUSIVE, // sharing
 		0, // queueFamilyIndexCount
 		nullptr, // pQueueFamilyIndices
@@ -381,6 +394,31 @@ void QueueFamilyManager::fill_command_buffer(
 	// End drawing stuff.
 	vkCmdEndRenderPass(cmd_bufs[0]);
 
+	///// TODO: temporary
+	VkBufferImageCopy bic {
+		0,
+		0,
+		0,
+		{
+			VK_IMAGE_ASPECT_DEPTH_BIT,
+			0,
+			0,
+			1
+		},
+		{0, 0, 0},
+		{
+			frame_size,
+			frame_size,
+			1
+		}
+	};
+	vkCmdCopyImageToBuffer(cmd_bufs[0], depth_image.get(),
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		img_read_buf.buf.get(),
+		1, &bic
+	);
+	///// TODO: temporary end
+
 	// End command buffer.
 	chk_vk(vkEndCommandBuffer(cmd_bufs[0]));
 }
@@ -404,6 +442,25 @@ void QueueFamilyManager::render_frame(Vec4 quat)
 	vkQueueSubmit(qs[0], 1, &si, VK_NULL_HANDLE);
 
 	vkQueueWaitIdle(qs[0]);
+
+	// TODO: temporary
+	if(dis(rnd) <= 10) {
+		MemMapper m(d, img_read_buf.mem.get());
+		auto img = m.get<float*>();
+
+		char fname[100];
+		snprintf(fname, 100, "img%04zu.pgm", pcount++);
+		std::ofstream fd(fname);
+		fd << "P2\n" << frame_size << ' ' << frame_size << "\n255\n";
+
+		for(size_t y = 0; y < frame_size; ++y) {
+			for(size_t x = 0; x < frame_size; ++x) {
+				fd << unsigned(img[y * frame_size + x] * 255.0)
+					<< ' ';
+			}
+			fd << '\n';
+		}
+	}
 }
 
 ShadowProcessor::ShadowProcessor(
@@ -617,8 +674,9 @@ void ShadowProcessor::create_render_pipeline()
 		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 		VK_ATTACHMENT_STORE_OP_DONT_CARE,
 		VK_IMAGE_LAYOUT_UNDEFINED,
-		// TODO: verify if this is correct:
-		VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+		//VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+		// TODO: temporary
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
 	};
 
 	// Depth buffer attachment reference:

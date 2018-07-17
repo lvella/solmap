@@ -1,5 +1,6 @@
 #pragma once
 
+#include <random>
 #include <vector>
 #include <iostream>
 #include <cmath>
@@ -75,6 +76,13 @@ private:
 	UVkCommandPool command_pool;
 	UVkCommandBuffers cmd_bufs;
 	//UVkFence frame_fence;
+
+	// TODO: Temporary:
+	VkDevice d;
+	Buffer img_read_buf;
+	std::mt19937 rnd;
+	std::uniform_int_distribution<> dis{0, 50000};
+	size_t pcount = 0;
 };
 
 // If moved, the only valid operation is destruction.
@@ -126,4 +134,3 @@ private:
 	Vec3 sum = {0,0,0};
 	size_t count = 0;
 };
-
