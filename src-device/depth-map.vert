@@ -1,7 +1,7 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-layout(push_constant) uniform InputData
+layout(binding = 0) uniform InputData
 {
 	// This orientation is given as a normalized quaternion,
 	// where the scalar component is w.

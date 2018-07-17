@@ -47,15 +47,7 @@ public:
 
     ~MemMapper()
     {
-	// Flush the mapped range.
-	VkMappedMemoryRange range {
-	    VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-	    nullptr,
-	    m,
-	    o,
-	    VK_WHOLE_SIZE
-	};
-	vkFlushMappedMemoryRanges(d, 1, &range);
+	flush();
 
 	// Unmap it.
 	vkUnmapMemory(d, m);
@@ -65,6 +57,19 @@ public:
     T get()
     {
 	return static_cast<T>(data);
+    }
+
+    void flush()
+    {
+	// Flush the mapped range.
+	VkMappedMemoryRange range {
+	    VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+	    nullptr,
+	    m,
+	    o,
+	    VK_WHOLE_SIZE
+	};
+	vkFlushMappedMemoryRanges(d, 1, &range);
     }
 
 private:
@@ -80,7 +85,7 @@ public:
 	UVkCommandBuffers(VkDevice d, const VkCommandBufferAllocateInfo& info);
 	UVkCommandBuffers() = default;
 
-	VkCommandBuffer operator[](uint32_t idx) const
+	const VkCommandBuffer& operator[](uint32_t idx) const
 	{
 	    return bufs[idx];
 	}
@@ -251,6 +256,16 @@ using UVkShaderModule = ManagedDPVk<
     vkDestroyShaderModule
 >;
 
+using UVkDescriptorSetLayout = ManagedDPVk<
+    vkCreateDescriptorSetLayout,
+    vkDestroyDescriptorSetLayout
+>;
+
+using UVkDescriptorPool = ManagedDPVk<
+    vkCreateDescriptorPool,
+    vkDestroyDescriptorPool
+>;
+
 using UVkPipelineLayout = ManagedDPVk<
     vkCreatePipelineLayout,
     vkDestroyPipelineLayout
@@ -273,3 +288,5 @@ using UVkImageView = ManagedDPVk<vkCreateImageView, vkDestroyImageView>;
 using UVkFramebuffer = ManagedDPVk<vkCreateFramebuffer, vkDestroyFramebuffer>;
 
 using UVkCommandPool = ManagedDPVk<vkCreateCommandPool, vkDestroyCommandPool>;
+
+using UVkFence = ManagedDPVk<vkCreateFence, vkDestroyFence>;

@@ -1,4 +1,5 @@
 #include <assimp/scene.h>
+#include <glm/glm.hpp>
 
 #include "vk_manager.hpp"
 #include "shadow_processor.hpp"
@@ -136,7 +137,10 @@ QueueFamilyManager::QueueFamilyManager(
 	const aiScene* scene
 ):
 	qf_idx{idx},
-	qs{std::move(queues)}
+	qs{std::move(queues)},
+	uniform_buf{device, mem_props,
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(Vec4)},
+	uniform_map{device, uniform_buf.mem.get()}
 {
 	// There may be multiple meshes in the loaded scene,
 	// load them all.
@@ -210,10 +214,32 @@ QueueFamilyManager::QueueFamilyManager(
 			0, 1, 0, 1
 		}
 	}, device};
-}
 
+	// Create the descriptor for the uniform.
+	VkDescriptorPoolSize dps {
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		1
+	};
+
+	desc_pool = UVkDescriptorPool(VkDescriptorPoolCreateInfo{
+		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		nullptr,
+		0,
+		1,
+		1,
+		&dps
+	}, device);
+
+	// Create the frame fence
+	/*frame_fence = UVkFence(VkFenceCreateInfo{
+		VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+		nullptr,
+		0
+	}, device);*/
+}
 void QueueFamilyManager::create_command_buffer(
-	VkDevice d, VkRenderPass rp, VkPipeline pipeline)
+	VkDevice d, VkRenderPass rp, VkDescriptorSetLayout dl,
+	VkPipeline pipeline, VkPipelineLayout pipeline_layout)
 {
 	// Create the framebuffer:
 	auto at = depth_image_view.get();
@@ -236,6 +262,36 @@ void QueueFamilyManager::create_command_buffer(
 		qf_idx
 	}, d};
 
+	// Create descriptor set, for uniform variable
+	VkDescriptorSetAllocateInfo dsai {
+		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		nullptr,
+		desc_pool.get(),
+		1,
+		&dl
+	};
+	chk_vk(vkAllocateDescriptorSets(d, &dsai, &desc_set));
+
+	VkDescriptorBufferInfo buffer_info {
+		uniform_buf.buf.get(),
+		0,
+		VK_WHOLE_SIZE
+	};
+	VkWriteDescriptorSet wds {
+		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr,
+		desc_set,
+		0,
+		0,
+		1,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		nullptr,
+		&buffer_info,
+		nullptr
+	};
+
+	vkUpdateDescriptorSets(d, 1, &wds, 0, nullptr);
+
 	// Allocate a single command buffer:
 	cmd_bufs = UVkCommandBuffers(d, VkCommandBufferAllocateInfo{
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -245,6 +301,13 @@ void QueueFamilyManager::create_command_buffer(
 		1
 	});
 
+	fill_command_buffer(rp, pipeline, pipeline_layout);
+}
+
+void QueueFamilyManager::fill_command_buffer(
+	VkRenderPass rp, VkPipeline pipeline,
+	VkPipelineLayout pipeline_layout)
+{
 	// Start recording the commands in the command buffer.
 	VkCommandBufferBeginInfo cbbi{
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -284,6 +347,11 @@ void QueueFamilyManager::create_command_buffer(
 	vkCmdBindVertexBuffers(cmd_bufs[0], 0, meshes.size(),
 		vertexBuffers.data(), offsets.data());
 
+	// Bind the uniform variable.
+	vkCmdBindDescriptorSets(cmd_bufs[0],
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		pipeline_layout, 0, 1, &desc_set, 0, nullptr);
+
 	// Draw things:
 	const VkDeviceSize zero_offset = 0;
 	for(auto& m: meshes) {
@@ -304,6 +372,27 @@ void QueueFamilyManager::create_command_buffer(
 
 	// End command buffer.
 	chk_vk(vkEndCommandBuffer(cmd_bufs[0]));
+}
+
+void QueueFamilyManager::render_frame(Vec4 quat)
+{
+	*uniform_map.get<Vec4*>() = quat;
+	uniform_map.flush();
+
+	VkSubmitInfo si{
+		VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		nullptr,
+		0,
+		nullptr,
+		nullptr,
+		1,
+		&cmd_bufs[0],
+		0,
+		nullptr
+	};
+	vkQueueSubmit(qs[0], 1, &si, VK_NULL_HANDLE);
+
+	vkQueueWaitIdle(qs[0]);
 }
 
 ShadowProcessor::ShadowProcessor(
@@ -333,7 +422,9 @@ ShadowProcessor::ShadowProcessor(
 	// Create framebuffers and command buffers:
 	for(auto& qf: qfs) {
 		qf.create_command_buffer(
-			d.get(), render_pass.get(), pipeline.get());
+			d.get(), render_pass.get(),
+			desc_set_layout.get(),
+			pipeline.get(), pipeline_layout.get());
 	}
 }
 
@@ -470,20 +561,39 @@ void ShadowProcessor::create_render_pipeline()
 
 	// Push constant used to push the orientation
 	// quaternion into the vertex shader.
-	const VkPushConstantRange pcr {
+	/*const VkPushConstantRange pcr {
 		VK_SHADER_STAGE_VERTEX_BIT,
 		0,
 		sizeof(Vec4)
+	};*/
+
+	// Uniform variable setting.
+	VkDescriptorSetLayoutBinding dslb {
+		0,
+		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		1,
+		VK_SHADER_STAGE_VERTEX_BIT,
+		nullptr
 	};
+
+	desc_set_layout = UVkDescriptorSetLayout(
+		VkDescriptorSetLayoutCreateInfo{
+			VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+			nullptr,
+			0,
+			1,
+			&dslb
+		}, d.get()
+	);
 
 	pipeline_layout = UVkPipelineLayout(VkPipelineLayoutCreateInfo{
 		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		nullptr,
 		0,
-		0,
-		nullptr,
 		1,
-		&pcr
+		&desc_set_layout.get(),
+		0, //1,
+		nullptr //&pcr
 	}, d.get());
 
 	// Depth buffer attachment:
@@ -555,6 +665,14 @@ void ShadowProcessor::create_render_pipeline()
 	}, d.get(), nullptr, 1);
 }
 
+// Doesn't work if a and b are opposites.
+// Lets assume, for now, that it never happens.
+static Vec4 rot_from_unit_a_to_unit_b(Vec3 a, Vec3 b)
+{
+	Vec4 ret{glm::cross(a,b), 1.0 + glm::dot(a, b)};
+	return glm::normalize(ret);
+}
+
 void ShadowProcessor::process(const AngularPosition& p)
 {
 	// Transforms into a unit vector pointing to the sun.
@@ -575,6 +693,12 @@ void ShadowProcessor::process(const AngularPosition& p)
 		std::sin(p.alt),
 		-std::cos(p.az) * c
 	};
+
+	// The rotation from model space sun to (0, 0, -1),
+	// which is pointing to the viewer in Vulkan coordinates.
+	Vec4 rot_to_sun = rot_from_unit_a_to_unit_b(sun, Vec3{0.0, 0.0, -1.0});
+	// TODO: use all queue families.
+	qfs[0].render_frame(rot_to_sun);
 
 	sum += sun;
 	++count;

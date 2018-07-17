@@ -43,14 +43,27 @@ public:
 		const class aiScene* scene);
 
 	void create_command_buffer(
-		VkDevice d, VkRenderPass rp, VkPipeline pipeline
+		VkDevice d, VkRenderPass rp,  VkDescriptorSetLayout dl,
+		VkPipeline pipeline, VkPipelineLayout pipeline_layout
 	);
+
+	void fill_command_buffer(VkRenderPass rp,
+		VkPipeline pipeline, VkPipelineLayout pipeline_layout);
+
+	void render_frame(Vec4 quat);
 
 private:
 	uint32_t qf_idx;
 	std::vector<VkQueue> qs;
 
 	std::vector<MeshBuffers> meshes;
+
+	// Memory will remain mapped through
+	// the existence of this object.
+	Buffer uniform_buf;
+	MemMapper uniform_map;
+	UVkDescriptorPool desc_pool;
+	VkDescriptorSet desc_set;
 
 	UVkImage depth_image;
 	UVkDeviceMemory depth_image_mem;
@@ -59,6 +72,7 @@ private:
 
 	UVkCommandPool command_pool;
 	UVkCommandBuffers cmd_bufs;
+	//UVkFence frame_fence;
 };
 
 // If moved, the only valid operation is destruction.
@@ -101,6 +115,7 @@ private:
 	UVkDevice d;
 	UVkShaderModule vert_shader;
 	UVkRenderPass render_pass;
+	UVkDescriptorSetLayout desc_set_layout;
 	UVkPipelineLayout pipeline_layout;
 	UVkGraphicsPipeline pipeline;
 
