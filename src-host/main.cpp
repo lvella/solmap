@@ -237,7 +237,7 @@ int main(int argc, char *argv[])
 
 	real best_alt = std::acos(best_dir.y);
 
-	// Project total to the surface plane:
+	// Project total to the surface plane, to calculate azimuth:
 	Vec3 plane_dir{total.x, 0.0, total.z};
 	real best_az = std::acos(glm::dot(Vec3{0, 0, -1}, plane_dir)
 		/ glm::length(plane_dir));
