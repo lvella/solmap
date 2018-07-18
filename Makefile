@@ -12,7 +12,8 @@ MODULES = \
 	vk_manager
 
 SHADERS = \
-	depth-map.vert
+	depth-map.vert \
+	incidence-calc.comp
 
 SDIR = src-host
 DDIR = src-device
