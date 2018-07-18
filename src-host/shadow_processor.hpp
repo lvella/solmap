@@ -15,7 +15,9 @@ struct Buffer
 {
 	Buffer(VkDevice device,
 		const VkPhysicalDeviceMemoryProperties& mem_props,
-		VkBufferUsageFlags usage, uint32_t size);
+		VkBufferUsageFlags usage, uint32_t size,
+		VkMemoryPropertyFlags required,
+		VkMemoryPropertyFlags prefered);
 
 	UVkDeviceMemory mem;
 	UVkBuffer buf;

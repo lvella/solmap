@@ -48,7 +48,10 @@ static uint32_t find_memory_heap(
 
 Buffer::Buffer(VkDevice d,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
-	VkBufferUsageFlags usage, uint32_t size):
+	VkBufferUsageFlags usage, uint32_t size,
+	VkMemoryPropertyFlags required,
+	VkMemoryPropertyFlags prefered
+):
 	buf{VkBufferCreateInfo{
 			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 			nullptr,
@@ -69,8 +72,7 @@ Buffer::Buffer(VkDevice d,
 	uint32_t mtype = find_memory_heap(
 		mem_props,
 		mem_reqs.memoryTypeBits,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		required, prefered
 	);
 
 	// Allocate the memory:
@@ -92,10 +94,16 @@ MeshBuffers::MeshBuffers(VkDevice device,
 ):
 	vertex(device, mem_props,
 		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-		mesh->mNumVertices * 3 * sizeof(real)),
+		mesh->mNumVertices * 3 * sizeof(real),
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	),
 	index(device, mem_props,
 		VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-		mesh->mNumFaces * 3 * sizeof(uint32_t)),
+		mesh->mNumFaces * 3 * sizeof(uint32_t),
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	),
 	idx_count(mesh->mNumFaces * 3)
 {
 	{
@@ -139,7 +147,10 @@ QueueFamilyManager::QueueFamilyManager(
 	qf_idx{idx},
 	qs{std::move(queues)},
 	uniform_buf{device, mem_props,
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(Vec4)},
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(Vec4),
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	},
 	uniform_map{device, uniform_buf.mem.get()}
 {
 	// There may be multiple meshes in the loaded scene,
