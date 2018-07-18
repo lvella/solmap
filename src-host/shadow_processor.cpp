@@ -444,7 +444,7 @@ void QueueFamilyManager::render_frame(Vec4 quat)
 	vkQueueWaitIdle(qs[0]);
 
 	// TODO: temporary
-	if(dis(rnd) <= 10) {
+	/*if(dis(rnd) <= 10)*/ {
 		MemMapper m(d, img_read_buf.mem.get());
 		auto img = m.get<float*>();
 

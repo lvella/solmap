@@ -29,11 +29,11 @@ ffibuilder.embedding_init_code("""
         obs.lon = str(longitude)
         obs.elevation = elevation
 
-        dt = datetime.timedelta(minutes=5)
+        dt = datetime.timedelta(minutes=30)
 
-        t = datetime.datetime(2017, 1, 1, 0, 0, 0)
+        t = datetime.datetime(2018, 6, 18, 0, 0, 0)
 
-        final = datetime.datetime(2018, 1, 1, 0, 0, 0)
+        final = datetime.datetime(2018, 6, 19, 0, 0, 0)
 
         while(t <= final):
             obs.date = t.strftime('%Y/%m/%d %H:%M:%S')
