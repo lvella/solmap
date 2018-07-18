@@ -699,6 +699,17 @@ void ShadowProcessor::create_render_pipeline()
 		nullptr
 	};
 
+	const VkSubpassDependency sdep {
+		0, // srcSubpass
+		VK_SUBPASS_EXTERNAL, // dstSubpass
+		VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, // srcStageMask
+		VK_PIPELINE_STAGE_TRANSFER_BIT, // dstStageMask
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // srcAccessMask
+		// TODO: temporaray:
+		VK_ACCESS_TRANSFER_READ_BIT, // dstAccessMask
+		0 // dependencyFlags
+	};
+
 	render_pass = UVkRenderPass(VkRenderPassCreateInfo {
 		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
 		nullptr,
@@ -707,8 +718,8 @@ void ShadowProcessor::create_render_pipeline()
 		&dbad,
 		1,
 		&sd,
-		0,
-		nullptr
+		1,
+		&sdep
 	}, d.get());
 
 	pipeline = UVkGraphicsPipeline(VkGraphicsPipelineCreateInfo{
