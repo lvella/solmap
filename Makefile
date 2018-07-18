@@ -1,5 +1,5 @@
-CC = clang-6.0
-CXX = clang++-6.0 -std=c++17
+CC = gcc
+CXX = g++ -std=c++17
 GLSLC = glslc
 
 OPTFLAGS = -g
