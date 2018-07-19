@@ -44,15 +44,12 @@ public:
 		std::vector<VkQueue>&& queues,
 		const class aiScene* scene);
 
-	void create_command_buffer(
-		VkDevice d, VkRenderPass rp,  VkDescriptorSetLayout dl,
-		VkPipeline pipeline, VkPipelineLayout pipeline_layout
-	);
+	void create_command_buffer(const class ShadowProcessor& sp);
 
 	void fill_command_buffer(VkRenderPass rp,
 		VkPipeline pipeline, VkPipelineLayout pipeline_layout);
 
-	void render_frame(Vec4 quat);
+	void render_frame(const Vec3& suns_direction);
 
 private:
 	uint32_t qf_idx;
@@ -64,13 +61,15 @@ private:
 	// the existence of this object.
 	Buffer uniform_buf;
 	MemMapper uniform_map;
+
 	UVkDescriptorPool desc_pool;
-	VkDescriptorSet desc_set;
+	VkDescriptorSet uniform_desc_set;
 
 	UVkImage depth_image;
 	UVkDeviceMemory depth_image_mem;
 	UVkImageView depth_image_view;
 	UVkFramebuffer framebuffer;
+	VkDescriptorSet img_sampler_desc_set;
 
 	UVkCommandPool command_pool;
 	UVkCommandBuffers cmd_bufs;
@@ -111,15 +110,28 @@ public:
 	}
 
 private:
+	friend class QueueFamilyManager;
+
 	void create_render_pipeline();
-	void create_command_buffer();
+	void create_compute_pipeline();
 
 	UVkDevice d;
+
+	// Stuf common to both pipelines:
+	UVkDescriptorSetLayout uniform_desc_set_layout;
+
+	// Graphics pipeline stuff:
 	UVkShaderModule vert_shader;
 	UVkRenderPass render_pass;
-	UVkDescriptorSetLayout desc_set_layout;
-	UVkPipelineLayout pipeline_layout;
-	UVkGraphicsPipeline pipeline;
+	UVkPipelineLayout graphic_pipeline_layout;
+	UVkGraphicsPipeline graphic_pipeline;
+
+	// Compute pipeline stuff:
+	UVkShaderModule compute_shader;
+	UVkSampler depth_sampler;
+	UVkDescriptorSetLayout comp_sampler_dset_layout;
+	UVkPipelineLayout compute_pipeline_layout;
+	UVkComputePipeline compute_pipeline;
 
 	std::vector<QueueFamilyManager> qfs;
 

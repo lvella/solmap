@@ -6,6 +6,27 @@
 
 static const uint32_t frame_size = 2048;
 
+struct VertexDataInput
+{
+	Vec3 position;
+	Vec3 normal;
+};
+
+struct UniformDataInput
+{
+	Vec4 orientation;
+	Vec3 suns_direction;
+};
+
+// Get quaternion rotation from unit vector a to unit vector b.
+// Doesn't work if a and b are opposites.
+// Lets assume, for now, that it never happens.
+static Vec4 rot_from_unit_a_to_unit_b(Vec3 a, Vec3 b)
+{
+	Vec4 ret{glm::cross(a,b), 1.0 + glm::dot(a, b)};
+	return glm::normalize(ret);
+}
+
 static uint32_t find_memory_heap(
 	const VkPhysicalDeviceMemoryProperties& mem_props,
 	uint32_t allowed,
@@ -94,7 +115,7 @@ MeshBuffers::MeshBuffers(VkDevice device,
 ):
 	vertex(device, mem_props,
 		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-		mesh->mNumVertices * 3 * sizeof(real),
+		mesh->mNumVertices * sizeof(VertexDataInput),
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	),
@@ -116,10 +137,12 @@ MeshBuffers::MeshBuffers(VkDevice device,
 		// square of the render area.
 		const real factor = 1.0 / std::sqrt(3.0);
 		MemMapper map(device, vertex.mem.get());
-		real *ptr = map.get<real*>();
-		for(uint32_t i = 0; i < mesh->mNumVertices; ++i) {
-			for(uint32_t j = 0; j < 3; ++j) {
-				ptr[i*3 + j] = factor * mesh->mVertices[i][j];
+		auto ptr = map.get<VertexDataInput*>();
+		for(uint32_t i = 0; i < mesh->mNumVertices; ++i, ++ptr) {
+			for(uint8_t j = 0; j < 3; ++j) {
+				ptr[i].position[j] =
+					factor * mesh->mVertices[i][j];
+				ptr[i].normal[j] = mesh->mNormals[i][j];
 			}
 		}
 	}
@@ -147,7 +170,8 @@ QueueFamilyManager::QueueFamilyManager(
 	qf_idx{idx},
 	qs{std::move(queues)},
 	uniform_buf{device, mem_props,
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(Vec4),
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		sizeof(UniformDataInput),
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	},
@@ -176,7 +200,8 @@ QueueFamilyManager::QueueFamilyManager(
 		1, // arrayLayers
 		VK_SAMPLE_COUNT_1_BIT, // samples
 		VK_IMAGE_TILING_OPTIMAL, // tiling
-		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, // usage
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+		| VK_IMAGE_USAGE_SAMPLED_BIT, // usage
 		VK_SHARING_MODE_EXCLUSIVE, // sharing
 		0, // queueFamilyIndexCount
 		nullptr, // pQueueFamilyIndices
@@ -227,9 +252,15 @@ QueueFamilyManager::QueueFamilyManager(
 	}, device};
 
 	// Create the descriptor for the uniform.
-	VkDescriptorPoolSize dps {
-		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-		1
+	const VkDescriptorPoolSize dps[] = {
+	       	{
+			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			1
+		},
+	       	{
+			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			1
+		}
 	};
 
 	desc_pool = UVkDescriptorPool(VkDescriptorPoolCreateInfo{
@@ -237,8 +268,8 @@ QueueFamilyManager::QueueFamilyManager(
 		nullptr,
 		0,
 		1,
-		1,
-		&dps
+		(sizeof dps) / (sizeof dps[0]),
+		dps
 	}, device);
 
 	// Create the frame fence
@@ -248,9 +279,8 @@ QueueFamilyManager::QueueFamilyManager(
 		0
 	}, device);*/
 }
-void QueueFamilyManager::create_command_buffer(
-	VkDevice d, VkRenderPass rp, VkDescriptorSetLayout dl,
-	VkPipeline pipeline, VkPipelineLayout pipeline_layout)
+
+void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
 {
 	// Create the framebuffer:
 	auto at = depth_image_view.get();
@@ -258,53 +288,83 @@ void QueueFamilyManager::create_command_buffer(
 		VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
 		nullptr,
 		0,
-		rp,
+		sp.render_pass.get(),
 		1,
 		&at,
 		frame_size,
 		frame_size,
 		1
-	}, d};
+	}, sp.d.get()};
 
 	command_pool = UVkCommandPool{VkCommandPoolCreateInfo{
 		VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 		nullptr,
 		0,
 		qf_idx
-	}, d};
+	}, sp.d.get()};
 
 	// Create descriptor set, for uniform variable
-	VkDescriptorSetAllocateInfo dsai {
+	const VkDescriptorSetLayout dset_layouts[] = {
+		sp.uniform_desc_set_layout.get(),
+		sp.comp_sampler_dset_layout.get()
+	};
+	const VkDescriptorSetAllocateInfo dsai {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		nullptr,
 		desc_pool.get(),
-		1,
-		&dl
+		(sizeof dset_layouts) / (sizeof dset_layouts[0]),
+		dset_layouts
 	};
-	chk_vk(vkAllocateDescriptorSets(d, &dsai, &desc_set));
 
-	VkDescriptorBufferInfo buffer_info {
+	VkDescriptorSet dsets[2];
+	chk_vk(vkAllocateDescriptorSets(sp.d.get(), &dsai, dsets));
+	uniform_desc_set = dsets[0];
+	img_sampler_desc_set = dsets[1];
+
+	const VkDescriptorBufferInfo buffer_info {
 		uniform_buf.buf.get(),
 		0,
 		VK_WHOLE_SIZE
 	};
-	VkWriteDescriptorSet wds {
-		VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-		nullptr,
-		desc_set,
-		0,
-		0,
-		1,
-		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-		nullptr,
-		&buffer_info,
-		nullptr
+	
+	const VkDescriptorImageInfo img_info {
+		// sampler, unused because it is immutable, but set anyway:
+		sp.depth_sampler.get(),
+		depth_image_view.get(),
+		VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL
 	};
 
-	vkUpdateDescriptorSets(d, 1, &wds, 0, nullptr);
+	const VkWriteDescriptorSet wds[] = {
+	       	{
+			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			nullptr,
+			uniform_desc_set,
+			0,
+			0,
+			1,
+			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			nullptr,
+			&buffer_info,
+			nullptr
+		},
+		{
+			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			nullptr,
+			img_sampler_desc_set,
+			1,
+			0,
+			1,
+			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			&img_info,
+			nullptr,
+			nullptr
+		}
+	};
+
+	vkUpdateDescriptorSets(sp.d.get(), 2, wds, 0, nullptr);
 
 	// Allocate a single command buffer:
-	cmd_bufs = UVkCommandBuffers(d, VkCommandBufferAllocateInfo{
+	cmd_bufs = UVkCommandBuffers(sp.d.get(), VkCommandBufferAllocateInfo{
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		nullptr,
 		command_pool.get(),
@@ -312,7 +372,11 @@ void QueueFamilyManager::create_command_buffer(
 		1
 	});
 
-	fill_command_buffer(rp, pipeline, pipeline_layout);
+	fill_command_buffer(
+		sp.render_pass.get(),
+		sp.graphic_pipeline.get(),
+		sp.graphic_pipeline_layout.get()
+	);
 }
 
 void QueueFamilyManager::fill_command_buffer(
@@ -361,7 +425,7 @@ void QueueFamilyManager::fill_command_buffer(
 	// Bind the uniform variable.
 	vkCmdBindDescriptorSets(cmd_bufs[0],
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		pipeline_layout, 0, 1, &desc_set, 0, nullptr);
+		pipeline_layout, 0, 1, &uniform_desc_set, 0, nullptr);
 
 	// Draw things:
 	const VkDeviceSize zero_offset = 0;
@@ -381,13 +445,28 @@ void QueueFamilyManager::fill_command_buffer(
 	// End drawing stuff.
 	vkCmdEndRenderPass(cmd_bufs[0]);
 
+	// Begin incidence compute.
+	// TODO...
+	// End compute phase.
+
 	// End command buffer.
 	chk_vk(vkEndCommandBuffer(cmd_bufs[0]));
 }
 
-void QueueFamilyManager::render_frame(Vec4 quat)
+void QueueFamilyManager::render_frame(const Vec3& direction)
 {
-	*uniform_map.get<Vec4*>() = quat;
+	// Get pointer to device memory:
+	auto params = uniform_map.get<UniformDataInput*>();
+
+	// The rotation from model space sun to (0, 0, -1),
+	// which is pointing to the viewer in Vulkan coordinates.
+	params->orientation = rot_from_unit_a_to_unit_b(
+		direction, Vec3{0.0, 0.0, -1.0});
+
+	// Set sun's direction:
+	params->suns_direction = direction;
+
+	// Flush the copy.
 	uniform_map.flush();
 
 	VkSubmitInfo si{
@@ -430,19 +509,19 @@ ShadowProcessor::ShadowProcessor(
 	// Create depth buffer rendering pipeline:
 	create_render_pipeline();
 
+	// Create solar incidence compute pipeline:
+	create_compute_pipeline();
+
 	// Create framebuffers and command buffers:
 	for(auto& qf: qfs) {
-		qf.create_command_buffer(
-			d.get(), render_pass.get(),
-			desc_set_layout.get(),
-			pipeline.get(), pipeline_layout.get());
+		qf.create_command_buffer(*this);
 	}
 }
 
 void ShadowProcessor::create_render_pipeline()
 {
 	// Create the vertex shader:
-	static const uint32_t shader_data[] =
+	static const uint32_t vert_shader_data[] =
 		#include "depth-map.vert.inc"
 	;
 
@@ -450,8 +529,8 @@ void ShadowProcessor::create_render_pipeline()
 		VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
 		nullptr,
 		0,
-		sizeof(shader_data),
-		shader_data
+		sizeof vert_shader_data,
+		vert_shader_data
 	}, d.get());
 
 	const VkPipelineShaderStageCreateInfo pss {
@@ -467,7 +546,7 @@ void ShadowProcessor::create_render_pipeline()
 	// Vertex data description:
 	const VkVertexInputBindingDescription vibd {
 		0,
-		3 * sizeof(real),
+		sizeof(VertexDataInput),
 		VK_VERTEX_INPUT_RATE_VERTEX
 	};
 
@@ -579,15 +658,16 @@ void ShadowProcessor::create_render_pipeline()
 	};*/
 
 	// Uniform variable setting.
-	VkDescriptorSetLayoutBinding dslb {
+	const VkDescriptorSetLayoutBinding dslb {
 		0,
 		VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 		1,
-		VK_SHADER_STAGE_VERTEX_BIT,
+		VK_SHADER_STAGE_VERTEX_BIT |
+		VK_SHADER_STAGE_COMPUTE_BIT,
 		nullptr
 	};
 
-	desc_set_layout = UVkDescriptorSetLayout(
+	uniform_desc_set_layout = UVkDescriptorSetLayout(
 		VkDescriptorSetLayoutCreateInfo{
 			VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 			nullptr,
@@ -597,17 +677,19 @@ void ShadowProcessor::create_render_pipeline()
 		}, d.get()
 	);
 
-	pipeline_layout = UVkPipelineLayout(VkPipelineLayoutCreateInfo{
+	graphic_pipeline_layout = UVkPipelineLayout(VkPipelineLayoutCreateInfo{
 		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 		nullptr,
 		0,
 		1,
-		&desc_set_layout.get(),
+		&uniform_desc_set_layout.get(),
 		0, //1,
 		nullptr //&pcr
 	}, d.get());
 
-	// Depth buffer attachment:
+	// Depth buffer attachment.
+	// After the render pass, the image should be in
+	// a layout to be sampled by the compute shader.
 	const VkAttachmentDescription dbad {
 		0,
 		VK_FORMAT_D32_SFLOAT,
@@ -617,8 +699,7 @@ void ShadowProcessor::create_render_pipeline()
 		VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 		VK_ATTACHMENT_STORE_OP_DONT_CARE,
 		VK_IMAGE_LAYOUT_UNDEFINED,
-		// TODO: verify if this is correct:
-		VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+		VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL
 	};
 
 	// Depth buffer attachment reference:
@@ -641,6 +722,16 @@ void ShadowProcessor::create_render_pipeline()
 		nullptr
 	};
 
+	const VkSubpassDependency sdep {
+		0, // srcSubpass
+		VK_SUBPASS_EXTERNAL, // dstSubpass
+		VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT, // srcStageMask
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // dstStageMask
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, // srcAccessMask
+		VK_ACCESS_SHADER_READ_BIT, // dstAccessMask
+		0 // dependencyFlags
+	};
+
 	render_pass = UVkRenderPass(VkRenderPassCreateInfo {
 		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
 		nullptr,
@@ -653,12 +744,12 @@ void ShadowProcessor::create_render_pipeline()
 		nullptr
 	}, d.get());
 
-	pipeline = UVkGraphicsPipeline(VkGraphicsPipelineCreateInfo{
+	graphic_pipeline = UVkGraphicsPipeline(VkGraphicsPipelineCreateInfo{
 		VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
 		nullptr,
 		0,
 		1,       // stageCount
-		&pss,    // pStages
+		&pss, // pStages
 		&pvis,   // pVertexInputState
 		&pias,   // pInputAssemblyState
 		nullptr, // pTessellationState
@@ -668,7 +759,7 @@ void ShadowProcessor::create_render_pipeline()
 		&pdss,   // pDepthStencilState
 		nullptr, // pColorBlendState
 		nullptr, // pDynamicState
-		pipeline_layout.get(), // layout
+		graphic_pipeline_layout.get(), // layout
 		render_pass.get(),     // renderPass
 		0,                     // subpass
 		VK_NULL_HANDLE, // basePipelineHandle
@@ -676,12 +767,136 @@ void ShadowProcessor::create_render_pipeline()
 	}, d.get(), nullptr, 1);
 }
 
-// Doesn't work if a and b are opposites.
-// Lets assume, for now, that it never happens.
-static Vec4 rot_from_unit_a_to_unit_b(Vec3 a, Vec3 b)
+void ShadowProcessor::create_compute_pipeline()
 {
-	Vec4 ret{glm::cross(a,b), 1.0 + glm::dot(a, b)};
-	return glm::normalize(ret);
+	// TODO: place here the correct number of points:
+	const uint32_t num_points = 200;
+
+	// Create the compute shader:
+	static const uint32_t compute_shader_data[] =
+		#include "incidence-calc.comp.inc"
+	;
+
+	compute_shader = UVkShaderModule(VkShaderModuleCreateInfo {
+		VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		nullptr,
+		0,
+		sizeof compute_shader_data,
+		compute_shader_data
+	}, d.get());
+
+	depth_sampler = UVkSampler{VkSamplerCreateInfo{
+		VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		nullptr,
+		0,
+		VK_FILTER_LINEAR,
+		VK_FILTER_LINEAR,
+		VK_SAMPLER_MIPMAP_MODE_NEAREST,
+		VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		0.0f,
+		VK_FALSE,
+		1.0,
+		VK_FALSE, // compareEnable, but also depends on shader...
+		VK_COMPARE_OP_LESS_OR_EQUAL,
+		0.0f,
+		0.0f,
+		VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE,
+		VK_FALSE
+	}, d.get()};
+
+	// Build the descriptor sets for the compute shader:
+	const VkDescriptorSetLayoutBinding dslbs[] = {
+		// Depth image sampler:
+		{
+			1,
+			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			1,
+			VK_SHADER_STAGE_COMPUTE_BIT,
+			&depth_sampler.get()
+		},
+
+		// Input points (same buffer as graphics attributes):
+		{
+			2,
+			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			num_points,
+			VK_SHADER_STAGE_COMPUTE_BIT,
+			nullptr
+		},
+
+		// Accumulated incidence for each input point:
+		{
+			3,
+			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			num_points,
+			VK_SHADER_STAGE_COMPUTE_BIT,
+			nullptr
+		}
+	};
+
+	comp_sampler_dset_layout = UVkDescriptorSetLayout{
+		VkDescriptorSetLayoutCreateInfo{
+			VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+			nullptr,
+			0,
+			(sizeof dslbs) / (sizeof dslbs[0]),
+			dslbs
+		}, d.get()
+	};
+
+	// Use the same descriptor set layout for the uniform variable
+	// used in the graphics pipeline, together with the new
+	// descriptor set layout created for the depth texture sampler.
+	VkDescriptorSetLayout dsls[] = {
+		uniform_desc_set_layout.get(),
+		comp_sampler_dset_layout.get()
+	};
+
+	compute_pipeline_layout = UVkPipelineLayout(VkPipelineLayoutCreateInfo{
+		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		nullptr,
+		0,
+		(sizeof dsls) / (sizeof dsls[0]),
+		dsls,
+		0,
+		nullptr
+	}, d.get());
+
+	// Set the total number of points worked by this compute pipeline.
+	// It is an specialization constant in the shader.
+	const VkSpecializationMapEntry map_entry {
+		0,
+		0,
+		sizeof num_points
+	};
+
+	const VkSpecializationInfo sinfo {
+		1,
+		&map_entry,
+		sizeof num_points,
+		&num_points
+	};
+
+	// Finaly, create the pipeline shader.
+	compute_pipeline = UVkComputePipeline{VkComputePipelineCreateInfo{
+		VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+		nullptr,
+		0,
+		{
+			VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			nullptr,
+			0,
+			VK_SHADER_STAGE_COMPUTE_BIT,
+			compute_shader.get(),
+			"main",
+			&sinfo
+		},
+		compute_pipeline_layout.get(),
+		VK_NULL_HANDLE,
+		-1
+	}, d.get(), nullptr, 1};
 }
 
 void ShadowProcessor::process(const AngularPosition& p)
@@ -705,11 +920,8 @@ void ShadowProcessor::process(const AngularPosition& p)
 		-std::cos(p.az) * c
 	};
 
-	// The rotation from model space sun to (0, 0, -1),
-	// which is pointing to the viewer in Vulkan coordinates.
-	Vec4 rot_to_sun = rot_from_unit_a_to_unit_b(sun, Vec3{0.0, 0.0, -1.0});
 	// TODO: use all queue families.
-	qfs[0].render_frame(rot_to_sun);
+	qfs[0].render_frame(sun);
 
 	sum += sun;
 	++count;
