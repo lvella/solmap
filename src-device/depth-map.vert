@@ -5,7 +5,8 @@ layout(binding = 0) uniform InputData
 {
 	// This orientation is given as a normalized quaternion,
 	// where the scalar component is w.
-	vec4 orientation;
+	vec4 to_sun_rotation;
+	vec3 sun_direction;
 };
 
 layout(location = 0) in vec3 inPosition;
@@ -18,7 +19,7 @@ out gl_PerVertex {
 
 void main()
 {
-	vec3 pos = quat_rot_vec(orientation, inPosition);
+	vec3 pos = quat_rot_vec(to_sun_rotation, inPosition);
 
 	// For some silly reason, Vulkan decided to support D3D,
 	// cliping range [0, 1], instead of the naturally

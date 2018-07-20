@@ -6,6 +6,7 @@
 
 #include "float.hpp"
 #include "vk_manager.hpp"
+#include "scene_loader.hpp"
 
 extern "C" {
 #include "sun_position.h"
@@ -27,7 +28,7 @@ struct MeshBuffers
 {
 	MeshBuffers(VkDevice device,
 		const VkPhysicalDeviceMemoryProperties& mem_props,
-		const class aiMesh* mesh);
+		const Mesh& mesh);
 
 	Buffer vertex;
 	Buffer index;
@@ -42,25 +43,38 @@ public:
 		const VkPhysicalDeviceMemoryProperties& mem_props,
 		uint32_t idx,
 		std::vector<VkQueue>&& queues,
-		const class aiScene* scene);
+		const Mesh& mesh);
 
 	void create_command_buffer(const class ShadowProcessor& sp);
 
-	void fill_command_buffer(VkRenderPass rp,
-		VkPipeline pipeline, VkPipelineLayout pipeline_layout);
+	void fill_command_buffer(const ShadowProcessor& sp);
 
-	void render_frame(const Vec3& suns_direction);
+	void compute_frame(const Vec3& suns_direction);
+
+	MeshBuffers& get_mesh()
+	{
+		return scene_mesh;
+	}
+
+	VkDeviceMemory get_result()
+	{
+		return result_buf.mem.get();
+	}
 
 private:
 	uint32_t qf_idx;
 	std::vector<VkQueue> qs;
 
-	std::vector<MeshBuffers> meshes;
+	MeshBuffers scene_mesh;
 
-	// Memory will remain mapped through
+	// Global task information,
+	// UniformDataInput structure,
+	// whose memory will remain mapped through
 	// the existence of this object.
-	Buffer uniform_buf;
-	MemMapper uniform_map;
+	Buffer global_buf;
+	MemMapper global_map;
+
+	Buffer result_buf;
 
 	UVkDescriptorPool desc_pool;
 	VkDescriptorSet uniform_desc_set;
@@ -76,16 +90,31 @@ private:
 	//UVkFence frame_fence;
 };
 
+// Optimizes the split of work groups
+// for a given total work size.
+struct WorkGroupSplit
+{
+	WorkGroupSplit(const VkPhysicalDeviceLimits &dlimits,
+		uint32_t work_size);
+	
+	// Size of the local group (only x dimension used):
+	uint32_t group_x_size;
+
+	// Number of groups to dispatch:
+	uint32_t num_groups;
+};
+
 // If moved, the only valid operation is destruction.
 class ShadowProcessor
 {
 public:
 	ShadowProcessor(
 		VkPhysicalDevice pdevice,
+		const VkPhysicalDeviceProperties &pd_props,
 		UVkDevice&& device,
 		std::vector<std::pair<uint32_t,
 			std::vector<VkQueue>>>&& queues,
-		const class aiScene* scene);
+		const Mesh &mesh);
 
 	ShadowProcessor(ShadowProcessor&& other) = default;
 	ShadowProcessor &operator=(ShadowProcessor&& other) = default;
@@ -109,8 +138,17 @@ public:
 		return count;
 	}
 
+	// Write the result to a VTK file.
+	// You can load it with Paraview.
+	void dump_vtk(const char* fname);
+
 private:
 	friend class QueueFamilyManager;
+
+	// Number of points to compute:
+	uint32_t num_points;
+
+	const WorkGroupSplit wsplit;
 
 	void create_render_pipeline();
 	void create_compute_pipeline();

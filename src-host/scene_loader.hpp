@@ -1,6 +1,20 @@
 #pragma once
 
-#include <memory>
-#include <assimp/Importer.hpp>
+#include <vector>
+#include <cstdint>
 
-std::unique_ptr<const Assimp::Importer> load_scene(const char* filename);
+#include "float.hpp"
+
+struct VertexData
+{
+	Vec3 position;
+	Vec3 normal;
+};
+
+struct Mesh
+{
+	std::vector<VertexData> vertices;
+	std::vector<uint32_t> indices;
+};
+
+Mesh load_scene(const char* filename);

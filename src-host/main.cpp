@@ -84,8 +84,9 @@ calculate_yearly_incidence(
 static void
 create_if_has_graphics(
 	VkPhysicalDevice pd,
+	const VkPhysicalDeviceProperties &pd_props,
 	std::vector<ShadowProcessor>& procs,
-	const aiScene *scene)
+	const Mesh &mesh)
 {
 	// Query queue capabilities:
 	uint32_t num_qf;
@@ -157,7 +158,7 @@ create_if_has_graphics(
 		}
 	}
 
-	procs.emplace_back(pd, std::move(d), std::move(qfs), scene);
+	procs.emplace_back(pd, pd_props, std::move(d), std::move(qfs), mesh);
 }
 
 UVkInstance initialize_vulkan()
@@ -185,7 +186,7 @@ UVkInstance initialize_vulkan()
 }
 
 static std::vector<ShadowProcessor>
-create_procs_from_devices(VkInstance vk, const aiScene *scene)
+create_procs_from_devices(VkInstance vk, const Mesh &mesh)
 {
 	std::vector<ShadowProcessor> processors;
 
@@ -202,7 +203,7 @@ create_procs_from_devices(VkInstance vk, const aiScene *scene)
 		std::cout << props.deviceName << ' '
 			<< props.deviceType << std::endl;
 
-		create_if_has_graphics(pd, processors, scene);
+		create_if_has_graphics(pd, props, processors, mesh);
 	}
 
 	return processors;
@@ -221,17 +222,18 @@ int main(int argc, char *argv[])
 
 	std::vector<ShadowProcessor> ps =
 		create_procs_from_devices(vk.get(),
-		load_scene(argv[3])->GetScene()
+		load_scene(argv[3])
 	);
 
 	calculate_yearly_incidence(lat, lon, 0, ps);
 
-	Vec3 total;
+	Vec3 total{0.0, 0.0, 0.0};
 	size_t count = 0;
 	for(auto &p: ps) {
 		total += p.get_sum();
 		count += p.get_count();
 	}
+	ps[0].dump_vtk("incidence.vtk");
 
 	Vec3 best_dir = glm::normalize(total);
 

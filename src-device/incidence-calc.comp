@@ -1,9 +1,10 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 
-layout (constant_id = 0) const int NUM_POINTS = 200;
+layout (constant_id = 0) const int NUM_POINTS = 100;
+layout (local_size_x_id = 1) in;
 
-layout(binding = 0) uniform GlobalInput
+layout(set=0, binding = 0) uniform GlobalInput
 {
 	// This orientation is given as a normalized quaternion,
 	// where the scalar component is w.
@@ -11,7 +12,7 @@ layout(binding = 0) uniform GlobalInput
 	vec3 sun_direction;
 };
 
-layout(binding = 1) uniform sampler2D depth_map;
+layout(set=1, binding = 0) uniform sampler2D depth_map;
 
 struct Point
 {
@@ -19,12 +20,12 @@ struct Point
 	vec3 normal;
 };
 
-layout(binding = 2) uniform Input
+layout(set=1, binding = 1) uniform Input
 {
 	Point point[NUM_POINTS];
 };
 
-layout(binding = 3) buffer Output
+layout(set=1, binding = 2) buffer Output
 {
 	float incidence[NUM_POINTS];
 };
@@ -33,6 +34,10 @@ layout(binding = 3) buffer Output
 
 void main()
 {
+	if(gl_GlobalInvocationID.x >= NUM_POINTS) {
+		return;
+	}
+
 	// Tolerance to account for texture sampling interpolation
 	// error (which must be set to linear, not nearest).
 	const float tol = 1e-4;
@@ -44,18 +49,17 @@ void main()
 		to_sun_rotation,
 		p.position
 	);
-	pos.z = 0.5 * pos.z + 0.5;
 
 	// Depth test
 	float visible_dist = texture(depth_map, pos.xy).r;
-	if(0.5 * pos.z + 0.5 > visible_dist + tol) {
+	if((0.5 * pos.z + 0.5) > (visible_dist + tol)) {
 		// The point is shadowed, don't compute
 		// direct sunlight.
 		return;
 	}
 
 	// Point is exposed, accumulate solar incidence.
-	// maX() is a precaution, because points facing
+	// max() is a precaution, because points facing
 	// outwards the sun should never be exposed.
 	incidence[gl_GlobalInvocationID.x] +=
 		max(0.0, dot(sun_direction, p.normal));
