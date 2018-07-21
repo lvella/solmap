@@ -1,1 +1,3 @@
- - Unify all meshes in a single vertex buffer.
+ - Use better time discretization.
+ - Work with variable time steps.
+ - Calculate results averaging over the whole year (not just daytime).
