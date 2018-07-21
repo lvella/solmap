@@ -96,7 +96,7 @@ struct WorkGroupSplit
 {
 	WorkGroupSplit(const VkPhysicalDeviceLimits &dlimits,
 		uint32_t work_size);
-	
+
 	// Size of the local group (only x dimension used):
 	uint32_t group_x_size;
 
@@ -133,14 +133,14 @@ public:
 		return sum;
 	}
 
-	size_t get_count() const
+	size_t get_process_count() const
 	{
 		return count;
 	}
 
-	// Write the result to a VTK file.
-	// You can load it with Paraview.
-	void dump_vtk(const char* fname);
+	void accumulate_result(double *accum);
+
+	void dump_vtk(const char* fname, double *result);
 
 private:
 	friend class QueueFamilyManager;

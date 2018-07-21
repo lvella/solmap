@@ -159,6 +159,9 @@ create_if_has_graphics(
 	}
 
 	procs.emplace_back(pd, pd_props, std::move(d), std::move(qfs), mesh);
+
+	std::cout << " - " << procs.size() - 1 << ": "
+		<< pd_props.deviceName << '\n';
 }
 
 UVkInstance initialize_vulkan()
@@ -196,13 +199,10 @@ create_procs_from_devices(VkInstance vk, const Mesh &mesh)
 	std::vector<VkPhysicalDevice> pds(dcount);
 	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, pds.data()));
 
+	std::cout << "Suitable Vulkan devices found:\n";
 	for(auto &pd: pds) {
 		VkPhysicalDeviceProperties props;
-
 		vkGetPhysicalDeviceProperties(pd, &props);
-		std::cout << props.deviceName << ' '
-			<< props.deviceType << std::endl;
-
 		create_if_has_graphics(pd, props, processors, mesh);
 	}
 
@@ -220,20 +220,42 @@ int main(int argc, char *argv[])
 
 	UVkInstance vk = initialize_vulkan();
 
-	std::vector<ShadowProcessor> ps =
-		create_procs_from_devices(vk.get(),
-		load_scene(argv[3])
-	);
+	std::vector<ShadowProcessor> ps;
+	size_t num_points;
+	{
+		auto scene_mesh = load_scene(argv[3]);
+		num_points = scene_mesh.vertices.size();
+		ps = create_procs_from_devices(vk.get(),
+			std::move(scene_mesh));
+	}
 
 	calculate_yearly_incidence(lat, lon, 0, ps);
 
+	// Get results:
+	std::vector<double> result(num_points, 0.0f);
 	Vec3 total{0.0, 0.0, 0.0};
 	size_t count = 0;
 	for(auto &p: ps) {
 		total += p.get_sum();
-		count += p.get_count();
+		count += p.get_process_count();
+		p.accumulate_result(result.data());
 	}
-	ps[0].dump_vtk("incidence.vtk");
+
+	// Divide result by the total number of executions:
+	double icount = 1.0 / count;
+	for(double &r: result) {
+		r *= icount;
+	}
+	ps[0].dump_vtk("incidence.vtk", result.data());
+
+	std::cout << "\nTotal positions considered: " << count
+		<< "\n\nWorkload distribution:\n";
+	for(size_t i = 0; i < ps.size(); ++i) {
+		const size_t lc =  ps[i].get_process_count();
+		std::cout << " - Device " << i << ": " << lc
+			<< '/' << count << " (" << lc * icount * 100.0
+			<< "%)\n";
+	}
 
 	Vec3 best_dir = glm::normalize(total);
 
@@ -244,11 +266,11 @@ int main(int argc, char *argv[])
 	real best_az = std::acos(glm::dot(Vec3{0, 0, -1}, plane_dir)
 		/ glm::length(plane_dir));
 
-	std::cout << "Best placement for latitude "
+	std::cout << "\nBest placement for latitude "
 		<< lat << " and longitude " << lon
 		<< " is:\n"
 		"Altitude: " << to_deg(best_alt) << "°\n"
 		"Azimuth: " << to_deg(best_az) << "°\n\n"
 		"At that position, the mean daytime power over a year is:\n"
-		<< 1000.0 * glm::dot(total, best_dir) / count << " watts/m²\n";
+		<< 1000.0 * glm::dot(total, best_dir) * icount << " watts/m²\n";
 }

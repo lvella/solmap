@@ -996,7 +996,16 @@ void ShadowProcessor::process(const AngularPosition& p)
 	++count;
 }
 
-void ShadowProcessor::dump_vtk(const char* fname)
+void ShadowProcessor::accumulate_result(double *accum)
+{
+	MemMapper map{d.get(), qfs[0].get_result()};
+	auto ptr = map.get<float*>();
+	for(uint32_t i = 0; i < num_points; ++i) {
+		accum[i] += ptr[i];
+	}
+}
+
+void ShadowProcessor::dump_vtk(const char* fname, double *result)
 {
 	std::ofstream fd(fname);
 
@@ -1023,7 +1032,7 @@ void ShadowProcessor::dump_vtk(const char* fname)
 	fd << "POLYGONS " << face_count << ' ' << face_count * 4 << '\n';
 	{
 		MemMapper map{d.get(), mesh.index.mem.get()};
-		
+
 		auto ptr = map.get<uint32_t*>();
 		for(uint32_t i = 0; i < face_count; ++i) {
 			fd << '3';
@@ -1037,12 +1046,8 @@ void ShadowProcessor::dump_vtk(const char* fname)
 	fd << "POINT_DATA " << num_points << "\n"
 		"SCALARS incidence float 1\n"
 		"LOOKUP_TABLE default\n";
-	{
-		MemMapper map{d.get(), qfs[0].get_result()};
 
-		auto ptr = map.get<float*>();
-		for(uint32_t i = 0; i < num_points; ++i) {
-			fd << ptr[i] / count << '\n';
-		}
+	for(uint32_t i = 0; i < num_points; ++i) {
+		fd << result[i] << '\n';
 	}
 }
