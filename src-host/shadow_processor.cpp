@@ -566,7 +566,6 @@ ShadowProcessor::ShadowProcessor(
 
 	command_pool.reserve(queues.size());
 	task_pool.reserve(num_slots);
-	std::cout << num_slots << std::endl;
 	for(auto &qf: queues) {
 		// Allocation pool for command buffer:
 		command_pool.push_back(UVkCommandPool{VkCommandPoolCreateInfo{
