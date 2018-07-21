@@ -84,7 +84,6 @@ calculate_yearly_incidence(
 static void
 create_if_has_graphics(
 	VkPhysicalDevice pd,
-	const VkPhysicalDeviceProperties &pd_props,
 	std::vector<ShadowProcessor>& procs,
 	const Mesh &mesh)
 {
@@ -158,6 +157,8 @@ create_if_has_graphics(
 		}
 	}
 
+	VkPhysicalDeviceProperties pd_props;
+	vkGetPhysicalDeviceProperties(pd, &pd_props);
 	procs.emplace_back(pd, pd_props, std::move(d), std::move(qfs), mesh);
 
 	std::cout << " - " << procs.size() - 1 << ": "
@@ -201,9 +202,14 @@ create_procs_from_devices(VkInstance vk, const Mesh &mesh)
 
 	std::cout << "Suitable Vulkan devices found:\n";
 	for(auto &pd: pds) {
-		VkPhysicalDeviceProperties props;
-		vkGetPhysicalDeviceProperties(pd, &props);
-		create_if_has_graphics(pd, props, processors, mesh);
+		try {
+			create_if_has_graphics(pd, processors, mesh);
+		} catch(const VulkanCreationError &err) {}
+	}
+	if(processors.empty()) {
+		std::cout << " None! Exiting due to lack of "
+			"suitable Vulkan devices!\n";
+		exit(1);
 	}
 
 	return processors;
