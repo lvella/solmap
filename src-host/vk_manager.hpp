@@ -278,12 +278,19 @@ using UVkGraphicsPipeline = ManagedDPVk<
 	vkDestroyPipeline
 >;
 
+using UVkComputePipeline = ManagedDPVk<
+	vkCreateComputePipelines,
+	vkDestroyPipeline
+>;
+
 using UVkImage = ManagedDPVk<
 	vkCreateImage,
 	vkDestroyImage
 >;
 
 using UVkImageView = ManagedDPVk<vkCreateImageView, vkDestroyImageView>;
+
+using UVkSampler = ManagedDPVk<vkCreateSampler, vkDestroySampler>;
 
 using UVkFramebuffer = ManagedDPVk<vkCreateFramebuffer, vkDestroyFramebuffer>;
 
