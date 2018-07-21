@@ -44,15 +44,16 @@ void main()
 
 	const Point p = point[gl_GlobalInvocationID.x];
 
-	// Rotate the point to sun's standpoint:
-	vec3 pos = quat_rot_vec(
+	// Rotate the point to sun's standpoint,
+	// and normalize coordinates:
+	vec3 pos = 0.5 * quat_rot_vec(
 		to_sun_rotation,
 		p.position.xyz
-	);
+	) + vec3(0.5, 0.5, 0.5);
 
 	// Depth test
 	float visible_dist = texture(depth_map, pos.xy).r;
-	if((0.5 * pos.z + 0.5) > (visible_dist + tol)) {
+	if(pos.z > (visible_dist + tol)) {
 		// The point is shadowed, don't compute
 		// direct sunlight.
 		return;
