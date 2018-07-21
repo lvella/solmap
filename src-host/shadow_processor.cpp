@@ -331,7 +331,7 @@ void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
 		0,
 		VK_WHOLE_SIZE
 	};
-	
+
 	const VkDescriptorImageInfo img_info {
 		// sampler, unused because it is immutable, but set anyway:
 		sp.depth_sampler.get(),
@@ -805,8 +805,8 @@ void ShadowProcessor::create_render_pipeline()
 		&dbad,
 		1,
 		&sd,
-		0,
-		nullptr
+		1,
+		&sdep
 	}, d.get());
 
 	graphic_pipeline = UVkGraphicsPipeline(VkGraphicsPipelineCreateInfo{
