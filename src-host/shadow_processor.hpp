@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <queue>
 #include <iostream>
 #include <cmath>
 
@@ -35,21 +36,27 @@ struct MeshBuffers
 	uint32_t idx_count;
 };
 
-class QueueFamilyManager
+class TaskSlot
 {
 public:
-	QueueFamilyManager(
+	TaskSlot(
 		VkDevice device,
 		const VkPhysicalDeviceMemoryProperties& mem_props,
 		uint32_t idx,
-		std::vector<VkQueue>&& queues,
+		VkQueue graphic_queue,
 		const Mesh& mesh);
 
-	void create_command_buffer(const class ShadowProcessor& sp);
+	void create_command_buffer(
+		const class ShadowProcessor& sp, VkCommandPool command_pool);
 
 	void fill_command_buffer(const ShadowProcessor& sp);
 
 	void compute_frame(const Vec3& suns_direction);
+
+	VkFence get_fence()
+	{
+		return frame_fence.get();
+	}
 
 	MeshBuffers& get_mesh()
 	{
@@ -63,7 +70,7 @@ public:
 
 private:
 	uint32_t qf_idx;
-	std::vector<VkQueue> qs;
+	VkQueue queue;
 
 	MeshBuffers scene_mesh;
 
@@ -76,7 +83,6 @@ private:
 
 	Buffer result_buf;
 
-	UVkDescriptorPool desc_pool;
 	VkDescriptorSet uniform_desc_set;
 
 	UVkImage depth_image;
@@ -85,9 +91,8 @@ private:
 	UVkFramebuffer framebuffer;
 	VkDescriptorSet img_sampler_desc_set;
 
-	UVkCommandPool command_pool;
 	UVkCommandBuffers cmd_bufs;
-	//UVkFence frame_fence;
+	UVkFence frame_fence;
 };
 
 // Optimizes the split of work groups
@@ -126,6 +131,11 @@ public:
 		}
 	}
 
+	const std::string& get_name()
+	{
+		return device_name;
+	}
+
 	void process(const AngularPosition& p);
 
 	const Vec3& get_sum() const
@@ -143,7 +153,10 @@ public:
 	void dump_vtk(const char* fname, double *result);
 
 private:
-	friend class QueueFamilyManager;
+	friend class TaskSlot;
+	static const unsigned SLOTS_PER_QUEUE = 3;
+
+	std::string device_name;
 
 	// Number of points to compute:
 	uint32_t num_points;
@@ -171,7 +184,16 @@ private:
 	UVkPipelineLayout compute_pipeline_layout;
 	UVkComputePipeline compute_pipeline;
 
-	std::vector<QueueFamilyManager> qfs;
+	// Memory pools:
+	UVkDescriptorPool desc_pool;
+	// One per queue family
+	// (although I never saw more than one graphics QF per device,
+	// maybe with SLI/Crossfire?)
+	std::vector<UVkCommandPool> command_pool;
+
+	std::vector<TaskSlot> task_pool;
+	std::queue<uint32_t> available_slots;
+	std::vector<VkFence> fence_set;
 
 	Vec3 sum = {0,0,0};
 	size_t count = 0;

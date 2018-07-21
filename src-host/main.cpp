@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <thread>
+#include <future>
 #include <cmath>
 
 #include <glm/geometric.hpp>
@@ -29,7 +30,7 @@ const Vec3 norm{0.0, 0.5*std::sqrt(2.0), -0.5*std::sqrt(2.0)};
 void
 calculate_yearly_incidence(
 	real latitude, real longitude, real altitude,
-	std::vector<ShadowProcessor> &processors
+	std::vector<std::unique_ptr<ShadowProcessor>> &processors
 )
 {
 	// The generator of Sun's position:
@@ -61,7 +62,7 @@ calculate_yearly_incidence(
 					break;
 				}
 
-				p.process(pos);
+				p->process(pos);
 			}
 		}));
 	}
@@ -81,10 +82,11 @@ calculate_yearly_incidence(
 	}
 }
 
-static void
+struct NoComputeQueueFamily: public std::exception {};
+
+static std::unique_ptr<ShadowProcessor>
 create_if_has_graphics(
 	VkPhysicalDevice pd,
-	std::vector<ShadowProcessor>& procs,
 	const Mesh &mesh)
 {
 	// Query queue capabilities:
@@ -100,7 +102,7 @@ create_if_has_graphics(
 
 	std::vector<float> priorities;
 	for(uint32_t i = 0; i < num_qf; ++i) {
-		// Queue family is not for compute, skip.
+		// Queue family is not for graphics, skip.
 		if(!(qfp[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
 			continue;
 		}
@@ -129,7 +131,7 @@ create_if_has_graphics(
 
 	// Create only if there is any usable queue family.
 	if(used_qf.empty()) {
-		return;
+		throw NoComputeQueueFamily{};
 	}
 
 	UVkDevice d{VkDeviceCreateInfo{
@@ -159,10 +161,12 @@ create_if_has_graphics(
 
 	VkPhysicalDeviceProperties pd_props;
 	vkGetPhysicalDeviceProperties(pd, &pd_props);
-	procs.emplace_back(pd, pd_props, std::move(d), std::move(qfs), mesh);
 
-	std::cout << " - " << procs.size() - 1 << ": "
-		<< pd_props.deviceName << '\n';
+	auto ret = std::make_unique<ShadowProcessor>(
+		pd, pd_props, std::move(d), std::move(qfs), mesh
+	);
+
+	return ret;
 }
 
 UVkInstance initialize_vulkan()
@@ -189,22 +193,35 @@ UVkInstance initialize_vulkan()
 	return vk;
 }
 
-static std::vector<ShadowProcessor>
+static std::vector<std::unique_ptr<ShadowProcessor>>
 create_procs_from_devices(VkInstance vk, const Mesh &mesh)
 {
-	std::vector<ShadowProcessor> processors;
-
+	// Get the number of Vulkan devices in the system:
 	uint32_t dcount;
 	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, nullptr));
 
+	// Get the list of VkPhysicalDevice
 	std::vector<VkPhysicalDevice> pds(dcount);
 	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, pds.data()));
 
-	std::cout << "Suitable Vulkan devices found:\n";
+	// Launch device setup tasks, possibly in parallel.
+	std::vector<std::future<std::unique_ptr<ShadowProcessor>>> create_work;
+	create_work.reserve(dcount);
 	for(auto &pd: pds) {
-		try {
-			create_if_has_graphics(pd, processors, mesh);
-		} catch(const VulkanCreationError &err) {}
+		create_work.push_back(std::async(
+			create_if_has_graphics, pd, mesh)
+		);
+	}
+
+	std::vector<std::unique_ptr<ShadowProcessor>> processors;
+	processors.reserve(dcount);
+	std::cout << "Suitable Vulkan devices found:\n";
+	for(auto &f: create_work) {
+		try{
+			processors.push_back(f.get());
+			std::cout << " - "<< processors.back()->get_name()
+				<< '\n';
+		} catch(const std::exception &e) {}
 	}
 	if(processors.empty()) {
 		std::cout << " None! Exiting due to lack of "
@@ -226,7 +243,7 @@ int main(int argc, char *argv[])
 
 	UVkInstance vk = initialize_vulkan();
 
-	std::vector<ShadowProcessor> ps;
+	std::vector<std::unique_ptr<ShadowProcessor>> ps;
 	size_t num_points;
 	{
 		auto scene_mesh = load_scene(argv[3]);
@@ -242,9 +259,9 @@ int main(int argc, char *argv[])
 	Vec3 total{0.0, 0.0, 0.0};
 	size_t count = 0;
 	for(auto &p: ps) {
-		total += p.get_sum();
-		count += p.get_process_count();
-		p.accumulate_result(result.data());
+		total += p->get_sum();
+		count += p->get_process_count();
+		p->accumulate_result(result.data());
 	}
 
 	// Divide result by the total number of executions:
@@ -252,12 +269,12 @@ int main(int argc, char *argv[])
 	for(double &r: result) {
 		r *= icount;
 	}
-	ps[0].dump_vtk("incidence.vtk", result.data());
+	ps[0]->dump_vtk("incidence.vtk", result.data());
 
 	std::cout << "\nTotal positions considered: " << count
 		<< "\n\nWorkload distribution:\n";
 	for(size_t i = 0; i < ps.size(); ++i) {
-		const size_t lc =  ps[i].get_process_count();
+		const size_t lc =  ps[i]->get_process_count();
 		std::cout << " - Device " << i << ": " << lc
 			<< '/' << count << " (" << lc * icount * 100.0
 			<< "%)\n";

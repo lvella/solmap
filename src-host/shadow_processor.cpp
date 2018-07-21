@@ -151,15 +151,15 @@ MeshBuffers::MeshBuffers(VkDevice device,
 	}
 }
 
-QueueFamilyManager::QueueFamilyManager(
+TaskSlot::TaskSlot(
 	VkDevice device,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
 	uint32_t idx,
-	std::vector<VkQueue>&& queues,
+	VkQueue graphic_queue,
 	const Mesh &mesh
 ):
 	qf_idx{idx},
-	qs{std::move(queues)},
+	queue{graphic_queue},
 	scene_mesh{device, mem_props, mesh},
 	global_buf{device, mem_props,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -252,40 +252,16 @@ QueueFamilyManager::QueueFamilyManager(
 		}
 	}, device};
 
-	// Create the descriptor for the uniform.
-	const VkDescriptorPoolSize dps[] = {
-	       	{
-			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			1
-		},
-		{
-			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			2
-		},
-	       	{
-			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-			1
-		}
-	};
-
-	desc_pool = UVkDescriptorPool(VkDescriptorPoolCreateInfo{
-		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-		nullptr,
-		0,
-		2,
-		(sizeof dps) / (sizeof dps[0]),
-		dps
-	}, device);
-
 	// Create the frame fence
-	/*frame_fence = UVkFence(VkFenceCreateInfo{
+	frame_fence = UVkFence(VkFenceCreateInfo{
 		VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
 		nullptr,
-		0
-	}, device);*/
+		VK_FENCE_CREATE_SIGNALED_BIT
+	}, device);
 }
 
-void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
+void TaskSlot::create_command_buffer(
+	const ShadowProcessor& sp, VkCommandPool command_pool)
 {
 	// Create the framebuffer:
 	auto at = depth_image_view.get();
@@ -301,13 +277,6 @@ void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
 		1
 	}, sp.d.get()};
 
-	command_pool = UVkCommandPool{VkCommandPoolCreateInfo{
-		VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-		nullptr,
-		0,
-		qf_idx
-	}, sp.d.get()};
-
 	// Create descriptor set, for uniform variable
 	const VkDescriptorSetLayout dset_layouts[] = {
 		sp.uniform_desc_set_layout.get(),
@@ -316,7 +285,7 @@ void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
 	const VkDescriptorSetAllocateInfo dsai {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		nullptr,
-		desc_pool.get(),
+		sp.desc_pool.get(),
 		(sizeof dset_layouts) / (sizeof dset_layouts[0]),
 		dset_layouts
 	};
@@ -409,7 +378,7 @@ void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
 	cmd_bufs = UVkCommandBuffers(sp.d.get(), VkCommandBufferAllocateInfo{
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 		nullptr,
-		command_pool.get(),
+		command_pool,
 		VK_COMMAND_BUFFER_LEVEL_PRIMARY,
 		1
 	});
@@ -417,14 +386,14 @@ void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
 	fill_command_buffer(sp);
 }
 
-void QueueFamilyManager::fill_command_buffer(
+void TaskSlot::fill_command_buffer(
 		const ShadowProcessor& sp)
 {
 	// Start recording the commands in the command buffer.
 	VkCommandBufferBeginInfo cbbi{
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 		nullptr,
-		0, // VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT
+		0,
 		nullptr
 	};
 	chk_vk(vkBeginCommandBuffer(cmd_bufs[0], &cbbi));
@@ -500,7 +469,7 @@ void QueueFamilyManager::fill_command_buffer(
 	chk_vk(vkEndCommandBuffer(cmd_bufs[0]));
 }
 
-void QueueFamilyManager::compute_frame(const Vec3& direction)
+void TaskSlot::compute_frame(const Vec3& direction)
 {
 	// Get pointer to device memory:
 	auto params = global_map.get<UniformDataInput*>();
@@ -527,9 +496,8 @@ void QueueFamilyManager::compute_frame(const Vec3& direction)
 		0,
 		nullptr
 	};
-	vkQueueSubmit(qs[0], 1, &si, VK_NULL_HANDLE);
 
-	vkQueueWaitIdle(qs[0]);
+	vkQueueSubmit(queue, 1, &si, frame_fence.get());
 }
 
 WorkGroupSplit::WorkGroupSplit(const VkPhysicalDeviceLimits &dlimits,
@@ -551,32 +519,76 @@ ShadowProcessor::ShadowProcessor(
 	std::vector<std::pair<uint32_t, std::vector<VkQueue>>>&& queues,
 	const Mesh &mesh
 ):
+	device_name{pd_props.deviceName},
 	num_points{static_cast<uint32_t>(mesh.vertices.size())},
 	wsplit{pd_props.limits, num_points},
 	d{std::move(device)}
 {
-	// Get the memory properties needed to allocate the buffer.
-	VkPhysicalDeviceMemoryProperties mem_props;
-	vkGetPhysicalDeviceMemoryProperties(pdevice, &mem_props);
-
-	// Create one queue family manager per queue family,
-	// the buffers will be local per queue family.
-	qfs.reserve(queues.size());
-	for(auto& q: queues)
-	{
-		qfs.emplace_back(d.get(), mem_props, q.first,
-			std::move(q.second), mesh);
-	}
-
 	// Create depth buffer rendering pipeline:
 	create_render_pipeline();
 
 	// Create solar incidence compute pipeline:
 	create_compute_pipeline();
 
-	// Create framebuffers and command buffers:
-	for(auto& qf: qfs) {
-		qf.create_command_buffer(*this);
+	unsigned num_slots = 0;
+	for(auto &qf: queues) {
+		num_slots = qf.second.size() * SLOTS_PER_QUEUE;
+	}
+
+	// Create the allocation pools.
+	// Allocation pool for descriptors:
+	const VkDescriptorPoolSize dps[] = {
+	       	{
+			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			num_slots
+		},
+		{
+			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			2 * num_slots
+		},
+	       	{
+			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+			num_slots
+		}
+	};
+	desc_pool = UVkDescriptorPool(VkDescriptorPoolCreateInfo{
+		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		nullptr,
+		0,
+		2,
+		(sizeof dps) / (sizeof dps[0]),
+		dps
+	}, d.get());
+
+	// Get the memory properties needed to allocate the buffer.
+	VkPhysicalDeviceMemoryProperties mem_props;
+	vkGetPhysicalDeviceMemoryProperties(pdevice, &mem_props);
+
+	command_pool.reserve(queues.size());
+	task_pool.reserve(num_slots);
+	std::cout << num_slots << std::endl;
+	for(auto &qf: queues) {
+		// Allocation pool for command buffer:
+		command_pool.push_back(UVkCommandPool{VkCommandPoolCreateInfo{
+			VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+			nullptr,
+			0,
+			qf.first
+		}, d.get()});
+
+		// Create one task slot per queue,
+		// the buffers will be local to it.
+		for(auto& q: qf.second)
+		{
+			task_pool.emplace_back(d.get(),
+				mem_props, qf.first, q, mesh);
+
+			task_pool.back().create_command_buffer(
+				*this, command_pool.back().get()
+			);
+			fence_set.push_back(task_pool.back().get_fence());
+			available_slots.push(task_pool.size()-1);
+		}
 	}
 }
 
@@ -989,19 +1001,46 @@ void ShadowProcessor::process(const AngularPosition& p)
 		-std::cos(p.az) * c
 	};
 
-	// TODO: use all queue families.
-	qfs[0].compute_frame(sun);
-
 	sum += sun;
 	++count;
+
+	if(available_slots.empty()) {
+		// No task slot available, wait on fences.
+		VkResult ret;
+		do {
+			ret = vkWaitForFences(d.get(), fence_set.size(),
+				fence_set.data(), VK_FALSE,
+				1000ul*1000ul*1000ul*60ul /* one minute */);
+		} while (ret == VK_TIMEOUT);
+		chk_vk(ret);
+
+		// Find what fences were signaled and make the slots available.
+		for(uint32_t i = 0; i < fence_set.size(); ++i) {
+			if(vkGetFenceStatus(d.get(), fence_set[i])
+				== VK_SUCCESS)
+			{
+				available_slots.push(i);
+			}
+		}
+	}
+
+	// Get the next available task slot.
+	uint32_t task_idx = available_slots.front();
+	available_slots.pop();
+
+	// Send the processing to that slot.
+	vkResetFences(d.get(), 1, &fence_set[task_idx]);
+	task_pool[task_idx].compute_frame(sun);
 }
 
 void ShadowProcessor::accumulate_result(double *accum)
 {
-	MemMapper map{d.get(), qfs[0].get_result()};
-	auto ptr = map.get<float*>();
-	for(uint32_t i = 0; i < num_points; ++i) {
-		accum[i] += ptr[i];
+	for(auto& t: task_pool) {
+		MemMapper map{d.get(), t.get_result()};
+		auto ptr = map.get<float*>();
+		for(uint32_t i = 0; i < num_points; ++i) {
+			accum[i] += ptr[i];
+		}
 	}
 }
 
@@ -1015,7 +1054,7 @@ void ShadowProcessor::dump_vtk(const char* fname, double *result)
 		"DATASET POLYDATA\n"
 		"POINTS " << num_points << " float\n";
 
-	MeshBuffers &mesh = qfs[0].get_mesh();
+	MeshBuffers &mesh = task_pool[0].get_mesh();
 
 	{
 		MemMapper map{d.get(), mesh.vertex.mem.get()};
