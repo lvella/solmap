@@ -203,6 +203,9 @@ create_procs_from_devices(VkInstance vk, const aiScene *scene)
 			<< props.deviceType << std::endl;
 
 		create_if_has_graphics(pd, processors, scene);
+
+		// TODO: temporary
+		break;
 	}
 
 	return processors;
