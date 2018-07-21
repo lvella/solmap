@@ -8,7 +8,9 @@
 struct VertexData
 {
 	Vec3 position;
+	float a;
 	Vec3 normal;
+	float b;
 };
 
 struct Mesh

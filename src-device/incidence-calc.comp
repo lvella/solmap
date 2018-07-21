@@ -16,16 +16,16 @@ layout(set=1, binding = 0) uniform sampler2D depth_map;
 
 struct Point
 {
-	vec3 position;
-	vec3 normal;
+	vec4 position;
+	vec4 normal;
 };
 
-layout(set=1, binding = 1) uniform Input
+layout(std140, set=1, binding = 1) buffer Input
 {
 	Point point[NUM_POINTS];
 };
 
-layout(set=1, binding = 2) buffer Output
+layout(std430, set=1, binding = 2) buffer Output
 {
 	float incidence[NUM_POINTS];
 };
@@ -47,7 +47,7 @@ void main()
 	// Rotate the point to sun's standpoint:
 	vec3 pos = quat_rot_vec(
 		to_sun_rotation,
-		p.position
+		p.position.xyz
 	);
 
 	// Depth test
@@ -62,5 +62,5 @@ void main()
 	// max() is a precaution, because points facing
 	// outwards the sun should never be exposed.
 	incidence[gl_GlobalInvocationID.x] +=
-		max(0.0, dot(sun_direction, p.normal));
+		max(0.0, dot(sun_direction, p.normal.xyz));
 }
