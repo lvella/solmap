@@ -124,7 +124,7 @@ MeshBuffers::MeshBuffers(VkDevice device,
 		// TODO: temporary, while there isn't a separated
 		// buffer for points to be tested, use the same
 		// buffer for vertex input and to compute shader:
-		| VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		| VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		mesh.vertices.size() * sizeof(VertexData),
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
@@ -268,11 +268,11 @@ QueueFamilyManager::QueueFamilyManager(
 	const VkDescriptorPoolSize dps[] = {
 	       	{
 			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-			2
+			1
 		},
 		{
 			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			1
+			2
 		},
 	       	{
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -343,7 +343,7 @@ void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
 		0,
 		VK_WHOLE_SIZE
 	};
-	
+
 	const VkDescriptorImageInfo img_info {
 		// sampler, unused because it is immutable, but set anyway:
 		sp.depth_sampler.get(),
@@ -395,7 +395,7 @@ void QueueFamilyManager::create_command_buffer(const ShadowProcessor& sp)
 			1,
 			0,
 			1,
-			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			nullptr,
 			&input_points_binfo,
 			nullptr
@@ -968,7 +968,7 @@ void ShadowProcessor::create_compute_pipeline()
 		// Input points (same buffer as graphics attributes):
 		{
 			1,
-			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			1,
 			VK_SHADER_STAGE_COMPUTE_BIT,
 			nullptr
