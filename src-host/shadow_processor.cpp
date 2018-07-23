@@ -292,8 +292,8 @@ void TaskSlot::create_command_buffer(
 
 	VkDescriptorSet dsets[2];
 	chk_vk(vkAllocateDescriptorSets(sp.d.get(), &dsai, dsets));
-	uniform_desc_set = dsets[0];
-	img_sampler_desc_set = dsets[1];
+	global_desc_set = dsets[0];
+	compute_desc_set = dsets[1];
 
 	const VkDescriptorBufferInfo buffer_info {
 		global_buf.buf.get(),
@@ -324,7 +324,7 @@ void TaskSlot::create_command_buffer(
 	       	{
 			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			nullptr,
-			uniform_desc_set,
+			global_desc_set,
 			0,
 			0,
 			1,
@@ -336,7 +336,7 @@ void TaskSlot::create_command_buffer(
 		{
 			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			nullptr,
-			img_sampler_desc_set,
+			compute_desc_set,
 			0,
 			0,
 			1,
@@ -348,7 +348,7 @@ void TaskSlot::create_command_buffer(
 		{
 			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			nullptr,
-			img_sampler_desc_set,
+			compute_desc_set,
 			1,
 			0,
 			1,
@@ -360,7 +360,7 @@ void TaskSlot::create_command_buffer(
 		{
 			VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 			nullptr,
-			img_sampler_desc_set,
+			compute_desc_set,
 			2,
 			0,
 			1,
@@ -422,7 +422,7 @@ void TaskSlot::fill_command_buffer(
 	// Bind the uniform variable.
 	vkCmdBindDescriptorSets(cmd_bufs[0],
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		sp.graphic_pipeline_layout.get(), 0, 1, &uniform_desc_set, 0, nullptr);
+		sp.graphic_pipeline_layout.get(), 0, 1, &global_desc_set, 0, nullptr);
 
 	// Draw things:
 	const VkDeviceSize zero_offset = 0;
@@ -449,8 +449,8 @@ void TaskSlot::fill_command_buffer(
 
 	// Bind both descriptor sets to the compute pipeline
 	VkDescriptorSet dsets[] = {
-		uniform_desc_set,
-		img_sampler_desc_set
+		global_desc_set,
+		compute_desc_set
 	};
 	vkCmdBindDescriptorSets(cmd_bufs[0],
 		VK_PIPELINE_BIND_POINT_COMPUTE,

@@ -83,13 +83,13 @@ private:
 
 	Buffer result_buf;
 
-	VkDescriptorSet uniform_desc_set;
+	VkDescriptorSet global_desc_set;
 
 	UVkImage depth_image;
 	UVkDeviceMemory depth_image_mem;
 	UVkImageView depth_image_view;
 	UVkFramebuffer framebuffer;
-	VkDescriptorSet img_sampler_desc_set;
+	VkDescriptorSet compute_desc_set;
 
 	UVkCommandBuffers cmd_bufs;
 	UVkFence frame_fence;
