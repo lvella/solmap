@@ -114,6 +114,61 @@ Buffer::Buffer(VkDevice d,
 	vkBindBufferMemory(d, buf.get(), mem.get(), 0);
 }
 
+AccessibleBuffer::AccessibleBuffer(
+	VkDevice d, const VkPhysicalDeviceMemoryProperties& mem_props,
+	VkBufferUsageFlags usage, uint32_t size,
+	BufferAccessDirection host_direction)
+{
+	try {
+		// Try to create both host visible and
+		// device local buffer:
+		*static_cast<Buffer*>(this) = Buffer{
+			d, mem_props, usage, size,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			| VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0};
+		is_host_visible = true;
+	} catch(std::exception &e) {
+		// Not possible, we must change the usage bits
+		// to include transfer in the desired direction:
+		if(host_direction & HOST_CAN_WRITE_BIT) {
+			usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		}
+		if(host_direction & HOST_CAN_READ_BIT) {
+			usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		}
+
+		*static_cast<Buffer*>(this) = Buffer{
+			d, mem_props, usage, size,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0};
+		is_host_visible = false;
+	}
+}
+
+MaybeStagedBuffer::MaybeStagedBuffer(VkDevice device,
+	const VkPhysicalDeviceMemoryProperties& mem_props,
+	VkBufferUsageFlags usage, uint32_t size,
+	BufferAccessDirection host_direction)
+{
+	AccessibleBuffer ab{device, mem_props, usage, size,
+		host_direction};
+
+	if(!ab.is_host_visible) {
+		VkBufferUsageFlags staging_usage = 0;
+		if(host_direction & HOST_CAN_WRITE_BIT) {
+			staging_usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		}
+		if(host_direction & HOST_CAN_READ_BIT) {
+			staging_usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		}
+
+		staging_buf = std::make_unique<Buffer>(device,
+			mem_props, staging_usage, size,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0);
+	}
+
+	*static_cast<Buffer*>(this) = static_cast<Buffer>(std::move(ab));
+}
+
 MeshBuffers::MeshBuffers(VkDevice device,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
 	const Mesh& mesh
@@ -164,8 +219,8 @@ TaskSlot::TaskSlot(
 	global_buf{device, mem_props,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		sizeof(UniformDataInput),
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
 	},
 	global_map{device, global_buf.mem.get()},
 	result_buf{device, mem_props,
