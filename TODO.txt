@@ -1,12 +1,13 @@
  - Use better time discretization.
     - Work with variable time steps.
  - Calculate results averaging over the whole year (not just daytime).
- - Handle devices without device local & host visible memory.
  - Refine the mesh, possibly with tesselation shader.
     - In compute phase, use a single storage buffer for vertex data and
       output, initializing it with the tesselation shader.
  - Use a thread pool with the optimal number of threads for initialization tasks:
     - Create TaskSlots in parallel, too.
+ - Accumulate results for the same device in a compute shader:
+    - Allocate a single memory region for all result buffers.
 
  - Performance experiments:
     - Try compute phase in the dedicated compute queue family, for

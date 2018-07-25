@@ -301,7 +301,7 @@ void TaskSlot::create_command_buffer(
 	} else {
 		btransf.transfer<float*>(sp.d.get(), mem_props, cmd_bufs[0],
 			queue, result_buf.buf.get(),
-			sizeof(float) * sp.num_points,
+			sp.num_points,
 			HOST_WILL_WRITE_BIT,
 			[&](float* ptr) {
 				std::fill_n(ptr,

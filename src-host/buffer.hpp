@@ -67,8 +67,11 @@ public:
 	void transfer(VkDevice device,
 		const VkPhysicalDeviceMemoryProperties& mem_props,
 		VkCommandBuffer cb, VkQueue q, VkBuffer buf,
-		uint32_t size, BufferAccessDirection direction, const F& func)
+		uint32_t count, BufferAccessDirection direction, const F& func)
 	{
+		const uint32_t size = count *
+			sizeof(typename std::remove_pointer<T>::type);
+
 		// If our temporary buffer is not big enough,
 		// allocate it.
 		if(tmp_size < size) {

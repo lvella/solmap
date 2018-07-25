@@ -96,7 +96,6 @@ AccessibleBuffer::AccessibleBuffer(
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 			| VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, 0};
 		is_host_visible = true;
-		std::cout << "### NOT using staging buffer." << std::endl;
 	} catch(std::exception &e) {
 		// Not possible, we must change the usage bits
 		// to include transfer in the desired direction:
@@ -111,7 +110,6 @@ AccessibleBuffer::AccessibleBuffer(
 			d, mem_props, usage, size,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0};
 		is_host_visible = false;
-		std::cout << "### Using staging buffer." << std::endl;
 	}
 }
 
