@@ -543,15 +543,17 @@ ShadowProcessor::ShadowProcessor(
 		BufferTransferer btransf;
 		for(auto& q: qf.second)
 		{
-			task_pool.emplace_back(d.get(),
-				mem_props, qf.first, q, mesh);
+			for(unsigned i = 0; i < SLOTS_PER_QUEUE; ++i) {
+				task_pool.emplace_back(d.get(),
+					mem_props, qf.first, q, mesh);
 
-			task_pool.back().create_command_buffer(mem_props,
-				*this, command_pool.back().get(),
-				btransf
-			);
-			fence_set.push_back(task_pool.back().get_fence());
-			available_slots.push(task_pool.size()-1);
+				task_pool.back().create_command_buffer(mem_props,
+					*this, command_pool.back().get(),
+					btransf
+				);
+				fence_set.push_back(task_pool.back().get_fence());
+				available_slots.push(task_pool.size()-1);
+			}
 		}
 	}
 }

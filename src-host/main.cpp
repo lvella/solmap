@@ -153,10 +153,12 @@ create_if_has_graphics(
 		qfs.back().first = qf.queueFamilyIndex;
 		auto& queues = qfs.back().second;
 
-		for(uint32_t i = 0; i < qf.queueCount; ++i) {
-			queues.emplace_back();
-			vkGetDeviceQueue(d.get(), qf.queueFamilyIndex, i, &queues.back());
-		}
+		// It seems there is no performance benefit of using
+		// more than one queue, so just create one.
+		// TODO: Maybe remove support for more than one queue
+		// in the same family?
+		queues.emplace_back();
+		vkGetDeviceQueue(d.get(), qf.queueFamilyIndex, 0, &queues.back());
 	}
 
 	VkPhysicalDeviceProperties pd_props;

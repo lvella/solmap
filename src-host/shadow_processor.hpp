@@ -144,7 +144,11 @@ public:
 
 private:
 	friend class TaskSlot;
-	static const unsigned SLOTS_PER_QUEUE = 3;
+
+	// Empirically, 5 seems to be the optimal number
+	// in a GeForce GTX 760. Maybe this number should
+	// be emprirically optimized between runs.
+	static const unsigned SLOTS_PER_QUEUE = 5;
 
 	std::string device_name;
 
