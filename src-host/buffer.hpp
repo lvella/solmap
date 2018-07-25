@@ -3,8 +3,8 @@
 #include "vk_manager.hpp"
 
 enum BufferAccessDirection {
-	HOST_WILL_WRITE_BIT = (0 << 0),
-	HOST_WILL_READ_BIT = (0 << 1)
+	HOST_WILL_WRITE_BIT = (1 << 0),
+	HOST_WILL_READ_BIT = (1 << 1)
 };
 
 uint32_t find_memory_heap(

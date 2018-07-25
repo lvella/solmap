@@ -496,7 +496,7 @@ ShadowProcessor::ShadowProcessor(
 
 	unsigned num_slots = 0;
 	for(auto &qf: queues) {
-		num_slots = qf.second.size() * SLOTS_PER_QUEUE;
+		num_slots += qf.second.size() * SLOTS_PER_QUEUE;
 	}
 
 	// Create the allocation pools.
@@ -519,7 +519,7 @@ ShadowProcessor::ShadowProcessor(
 		VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 		nullptr,
 		0,
-		2,
+		2 * num_slots,
 		(sizeof dps) / (sizeof dps[0]),
 		dps
 	}, d.get());
@@ -534,7 +534,7 @@ ShadowProcessor::ShadowProcessor(
 		command_pool.push_back(UVkCommandPool{VkCommandPoolCreateInfo{
 			VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 			nullptr,
-			0,
+			VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
 			qf.first
 		}, d.get()});
 
@@ -1015,11 +1015,13 @@ void ShadowProcessor::process(const AngularPosition& p)
 
 void ShadowProcessor::accumulate_result(double *accum)
 {
+	chk_vk(vkDeviceWaitIdle(d.get()));
 	BufferTransferer btransf;
 	for(auto& t: task_pool) {
 		t.accumulate_result(d.get(), mem_props,
 			btransf, num_points, accum);
 	}
+	chk_vk(vkDeviceWaitIdle(d.get()));
 }
 
 void ShadowProcessor::dump_vtk(const char* fname, double *result)
