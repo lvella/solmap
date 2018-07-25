@@ -5,9 +5,11 @@
  - Refine the mesh, possibly with tesselation shader.
     - In compute phase, use a single storage buffer for vertex data and
       output, initializing it with the tesselation shader.
+ - Use a thread pool with the optimal number of threads for initialization tasks:
+    - Create TaskSlots in parallel, too.
+
  - Performance experiments:
     - Try compute phase in the dedicated compute queue family, for
       AMD devices.
     - Try transfer in the dedicated compute queue family, for
       Nvidia devices.
-    - Try using all queue families in Nvidia devices.
