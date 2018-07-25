@@ -5,6 +5,7 @@ GLSLC = glslc
 OPTFLAGS = -g
 
 MODULES = \
+	buffer \
 	main \
 	scene_loader \
 	shadow_processor \

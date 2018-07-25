@@ -8,53 +8,11 @@
 #include "float.hpp"
 #include "vk_manager.hpp"
 #include "scene_loader.hpp"
+#include "buffer.hpp"
 
 extern "C" {
 #include "sun_position.h"
 }
-
-enum BufferAccessDirection {
-	HOST_CAN_WRITE_BIT = 0x1,
-	HOST_CAN_READ_BIT = 0x2
-};
-
-struct Buffer
-{
-	Buffer() = default;
-	Buffer(VkDevice device,
-		const VkPhysicalDeviceMemoryProperties& mem_props,
-		VkBufferUsageFlags usage, uint32_t size,
-		VkMemoryPropertyFlags required,
-		VkMemoryPropertyFlags prefered);
-
-	UVkDeviceMemory mem;
-	UVkBuffer buf;
-};
-
-// Device local buffer which can be accessed from host,
-// either directly, with host visibility, or via transfer.
-// Automatically sets buffer usage flags for transfer,
-// if needed.
-struct AccessibleBuffer: public Buffer
-{
-	AccessibleBuffer(VkDevice d,
-		const VkPhysicalDeviceMemoryProperties& mem_props,
-		VkBufferUsageFlags usage, uint32_t size,
-		BufferAccessDirection host_direction);
-
-	bool is_host_visible;
-};
-
-// Device local buffer, with staging buffer if there is
-// no available host visible memory type.
-struct MaybeStagedBuffer: public Buffer
-{
-	MaybeStagedBuffer(VkDevice device,
-		const VkPhysicalDeviceMemoryProperties& mem_props,
-		VkBufferUsageFlags usage, uint32_t size,
-		BufferAccessDirection host_direction);
-	std::unique_ptr<Buffer> staging_buf;
-};
 
 struct MeshBuffers
 {
@@ -70,15 +28,16 @@ struct MeshBuffers
 class TaskSlot
 {
 public:
-	TaskSlot(
-		VkDevice device,
+	TaskSlot(VkDevice device,
 		const VkPhysicalDeviceMemoryProperties& mem_props,
 		uint32_t idx,
 		VkQueue graphic_queue,
 		const Mesh& mesh);
 
 	void create_command_buffer(
-		const class ShadowProcessor& sp, VkCommandPool command_pool);
+		const VkPhysicalDeviceMemoryProperties& mem_props,
+		const class ShadowProcessor& sp, VkCommandPool command_pool,
+		BufferTransferer &btransf);
 
 	void fill_command_buffer(const ShadowProcessor& sp);
 
@@ -94,10 +53,10 @@ public:
 		return scene_mesh;
 	}
 
-	VkDeviceMemory get_result()
-	{
-		return result_buf.mem.get();
-	}
+	void accumulate_result(VkDevice d,
+		const VkPhysicalDeviceMemoryProperties& mem_props,
+		BufferTransferer& btransf,
+		uint32_t count, double* accum);
 
 private:
 	uint32_t qf_idx;
@@ -109,14 +68,10 @@ private:
 	// UniformDataInput structure,
 	// whose memory will remain mapped through
 	// the existence of this object.
-	Buffer global_buf;
+	MaybeStagedBuffer global_buf;
 	MemMapper global_map;
-	// Staging buffer for the global buffer, only used
-	// if the device doesn't have a (device local + host visible)
-	// memory type:
-	std::unique_ptr<Buffer> staging_buf;
 
-	Buffer result_buf;
+	AccessibleBuffer result_buf;
 
 	VkDescriptorSet global_desc_set;
 
@@ -202,6 +157,7 @@ private:
 	void create_compute_pipeline();
 
 	UVkDevice d;
+	VkPhysicalDeviceMemoryProperties mem_props;
 
 	// Stuf common to both pipelines:
 	UVkDescriptorSetLayout uniform_desc_set_layout;
