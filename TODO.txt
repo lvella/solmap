@@ -3,6 +3,8 @@
 
  - Use device local memory for mesh buffer.
 
+ - Remove normals from vertex attribute.
+
  - Use better time discretization.
     - Work with variable time steps.
 
