@@ -13,10 +13,8 @@ struct VertexData
 		normal(n)
 	{}
 
-	Vec3 position;
-	float a;
-	Vec3 normal;
-	float b;
+	alignas(16) Vec3 position;
+	alignas(16) Vec3 normal;
 };
 
 struct Mesh

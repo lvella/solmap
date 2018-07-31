@@ -20,7 +20,7 @@ struct Point
 	vec4 normal;
 };
 
-layout(std140, set=1, binding = 1) buffer Input
+layout(std430, set=1, binding = 1) buffer Input
 {
 	Point point[NUM_POINTS];
 };
