@@ -86,8 +86,6 @@ public:
 		}
 		assert(tmp);
 
-		MemMapper map{device, tmp->mem.get()};
-
 		// Range to flush and invalidate.
 		const VkMappedMemoryRange range {
 			VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
@@ -142,7 +140,10 @@ public:
 		}
 
 		// Execute the operation over the memory:
-		func(map.get<T>());
+		{
+			MemMapper map{device, tmp->mem.get()};
+			func(map.get<T>());
+		}
 
 		// Record and execute the command buffer to
 		// copy from host to device:

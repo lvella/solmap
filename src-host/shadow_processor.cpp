@@ -1,4 +1,3 @@
-#include <fstream>
 #include <cstddef>
 
 #include <assimp/scene.h>
@@ -37,11 +36,7 @@ MeshBuffers::MeshBuffers(VkDevice device,
 	const Mesh& mesh
 ):
 	vertex(device, mem_props,
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-		// TODO: temporary, while there isn't a separated
-		// buffer for points to be tested, use the same
-		// buffer for vertex input and to compute shader:
-		| VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		mesh.vertices.size() * sizeof(VertexData),
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
@@ -72,13 +67,11 @@ MeshBuffers::MeshBuffers(VkDevice device,
 TaskSlot::TaskSlot(
 	VkDevice device,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
-	uint32_t idx,
-	VkQueue graphic_queue,
-	const Mesh &mesh
+	uint32_t idx, uint32_t num_points,
+	VkQueue graphic_queue
 ):
 	qf_idx{idx},
 	queue{graphic_queue},
-	scene_mesh{device, mem_props, mesh},
 	global_buf{device, mem_props,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		sizeof(GlobalInputData),
@@ -87,7 +80,7 @@ TaskSlot::TaskSlot(
 	global_map{device, global_buf.get_visible_mem()},
 	result_buf{device, mem_props,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		static_cast<uint32_t>(mesh.vertices.size() * sizeof(float)),
+		static_cast<uint32_t>(num_points * sizeof(float)),
 		BufferAccessDirection(HOST_WILL_WRITE_BIT | HOST_WILL_READ_BIT)
 	}
 {
@@ -169,7 +162,7 @@ TaskSlot::TaskSlot(
 void TaskSlot::create_command_buffer(
 	const VkPhysicalDeviceMemoryProperties& mem_props,
 	const ShadowProcessor& sp, VkCommandPool command_pool,
-	BufferTransferer &btransf)
+	VkBuffer test_buffer, BufferTransferer &btransf)
 {
 	// Create the framebuffer:
 	auto at = depth_image_view.get();
@@ -217,7 +210,7 @@ void TaskSlot::create_command_buffer(
 	};
 
 	const VkDescriptorBufferInfo input_points_binfo {
-		scene_mesh.vertex.buf.get(),
+		test_buffer,
 		0,
 		VK_WHOLE_SIZE
 	};
@@ -311,12 +304,10 @@ void TaskSlot::create_command_buffer(
 			}
 		);
 	}
-
-	fill_command_buffer(sp);
 }
 
-void TaskSlot::fill_command_buffer(
-		const ShadowProcessor& sp)
+void TaskSlot::fill_command_buffer(const ShadowProcessor& sp,
+		const MeshBuffers &scene_mesh)
 {
 	// Start recording the commands in the command buffer.
 	VkCommandBufferBeginInfo cbbi{
@@ -358,12 +349,14 @@ void TaskSlot::fill_command_buffer(
 	vkCmdBeginRenderPass(cmd_bufs[0], &rpbi, VK_SUBPASS_CONTENTS_INLINE);
 
 	// Bind the pipeline:
-	vkCmdBindPipeline(cmd_bufs[0], VK_PIPELINE_BIND_POINT_GRAPHICS, sp.graphic_pipeline.get());
+	vkCmdBindPipeline(cmd_bufs[0], VK_PIPELINE_BIND_POINT_GRAPHICS,
+		sp.graphic_pipeline.get());
 
 	// Bind the uniform variable.
 	vkCmdBindDescriptorSets(cmd_bufs[0],
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		sp.graphic_pipeline_layout.get(), 0, 1, &global_desc_set, 0, nullptr);
+		sp.graphic_pipeline_layout.get(), 0, 1,
+		&global_desc_set, 0, nullptr);
 
 	// Draw things:
 	const VkDeviceSize zero_offset = 0;
@@ -481,10 +474,10 @@ ShadowProcessor::ShadowProcessor(
 	const VkPhysicalDeviceProperties &pd_props,
 	UVkDevice&& device,
 	std::vector<std::pair<uint32_t, std::vector<VkQueue>>>&& queues,
-	const Mesh &mesh
+	const Mesh &shadow_mesh, const std::vector<VertexData>& test_set
 ):
 	device_name{pd_props.deviceName},
-	num_points{static_cast<uint32_t>(mesh.vertices.size())},
+	num_points{static_cast<uint32_t>(test_set.size())},
 	wsplit{pd_props.limits, num_points},
 	d{std::move(device)}
 {
@@ -530,6 +523,8 @@ ShadowProcessor::ShadowProcessor(
 	command_pool.reserve(queues.size());
 	task_pool.reserve(num_slots);
 	for(auto &qf: queues) {
+		BufferTransferer btransf;
+
 		// Allocation pool for command buffer:
 		command_pool.push_back(UVkCommandPool{VkCommandPoolCreateInfo{
 			VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -538,19 +533,57 @@ ShadowProcessor::ShadowProcessor(
 			qf.first
 		}, d.get()});
 
+		// Allocate constant buffers for this queue family:
+		mesh.emplace_back(d.get(), mem_props, shadow_mesh);
+		test_buffer.emplace_back(d.get(), mem_props,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+			test_set.size() * sizeof(VertexData),
+			HOST_WILL_WRITE_BIT
+		);
+
+		// Fill the test buffer with the test points.
+		if(test_buffer.back().is_host_visible) {
+			MemMapper map{d.get(), test_buffer.back().mem.get()};
+			std::copy(test_set.begin(), test_set.end(),
+				map.get<VertexData*>());
+		} else {
+			// Temporary command buffer, just for this copy
+			UVkCommandBuffers cb{d.get(), VkCommandBufferAllocateInfo{
+				VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+				nullptr,
+				command_pool.back().get(),
+				VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+				1
+			}};
+
+			btransf.transfer<VertexData*>(d.get(), mem_props, cb[0],
+				qf.second[0], test_buffer.back().buf.get(),
+				test_set.size(), HOST_WILL_WRITE_BIT,
+				[&](VertexData* ptr) {
+					std::copy(test_set.begin(),
+						test_set.end(),
+						ptr
+					);
+				}
+			);
+		}
+
 		// Create one task slot per queue,
-		// the buffers will be local to it.
-		BufferTransferer btransf;
-		for(auto& q: qf.second)
-		{
+		// written buffers will be local to it.
+		// TODO: remove support for multiple queues here...
+		for(auto& q: qf.second) {
 			for(unsigned i = 0; i < SLOTS_PER_QUEUE; ++i) {
-				task_pool.emplace_back(d.get(),
-					mem_props, qf.first, q, mesh);
+				task_pool.emplace_back(d.get(),	mem_props,
+					qf.first, num_points, q);
 
 				task_pool.back().create_command_buffer(mem_props,
 					*this, command_pool.back().get(),
-					btransf
+					test_buffer.back().buf.get(), btransf
 				);
+				task_pool.back().fill_command_buffer(*this,
+					mesh.back()
+				);
+
 				fence_set.push_back(task_pool.back().get_fence());
 				available_slots.push(task_pool.size()-1);
 			}
@@ -1026,49 +1059,3 @@ void ShadowProcessor::accumulate_result(double *accum)
 	chk_vk(vkDeviceWaitIdle(d.get()));
 }
 
-void ShadowProcessor::dump_vtk(const char* fname, double *result)
-{
-	std::ofstream fd(fname);
-
-	fd << "# vtk DataFile Version 3.0\n"
-		"Daylight solar incidence\n"
-		"ASCII\n"
-		"DATASET POLYDATA\n"
-		"POINTS " << num_points << " float\n";
-
-	MeshBuffers &mesh = task_pool[0].get_mesh();
-
-	{
-		MemMapper map{d.get(), mesh.vertex.mem.get()};
-
-		auto ptr = map.get<VertexData*>();
-		for(uint32_t i = 0; i < num_points; ++i) {
-			fd << ptr[i].position.x << ' '
-				<< ptr[i].position.y << ' '
-				<< ptr[i].position.z << '\n';
-		}
-	}
-
-	uint32_t face_count = mesh.idx_count / 3;
-	fd << "POLYGONS " << face_count << ' ' << face_count * 4 << '\n';
-	{
-		MemMapper map{d.get(), mesh.index.mem.get()};
-
-		auto ptr = map.get<uint32_t*>();
-		for(uint32_t i = 0; i < face_count; ++i) {
-			fd << '3';
-			for(uint8_t j = 0; j < 3; ++j) {
-				fd << ' ' << *ptr++;
-			}
-			fd << '\n';
-		}
-	}
-
-	fd << "POINT_DATA " << num_points << "\n"
-		"SCALARS incidence float 1\n"
-		"LOOKUP_TABLE default\n";
-
-	for(uint32_t i = 0; i < num_points; ++i) {
-		fd << result[i] << '\n';
-	}
-}

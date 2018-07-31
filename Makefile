@@ -7,7 +7,7 @@ OPTFLAGS = -g
 MODULES = \
 	buffer \
 	main \
-	scene_loader \
+	mesh_tools \
 	shadow_processor \
 	sun_position \
 	vk_manager

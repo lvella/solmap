@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <thread>
 #include <future>
@@ -11,7 +12,7 @@
 #include "semaphore.hpp"
 #include "sun_seq.hpp"
 #include "shadow_processor.hpp"
-#include "scene_loader.hpp"
+#include "mesh_tools.hpp"
 
 template <typename F>
 constexpr F to_deg(F rad)
@@ -87,7 +88,7 @@ struct NoComputeQueueFamily: public std::exception {};
 static std::unique_ptr<ShadowProcessor>
 create_if_has_graphics(
 	VkPhysicalDevice pd,
-	const Mesh &mesh)
+	const Mesh &shadow_mesh, const std::vector<VertexData>& test_set)
 {
 	// Query queue capabilities:
 	uint32_t num_qf;
@@ -165,10 +166,51 @@ create_if_has_graphics(
 	vkGetPhysicalDeviceProperties(pd, &pd_props);
 
 	auto ret = std::make_unique<ShadowProcessor>(
-		pd, pd_props, std::move(d), std::move(qfs), mesh
+		pd, pd_props, std::move(d), std::move(qfs),
+		shadow_mesh, test_set
 	);
 
 	return ret;
+}
+
+static std::vector<std::unique_ptr<ShadowProcessor>>
+create_procs_from_devices(VkInstance vk,
+	const Mesh &shadow_mesh, const std::vector<VertexData>& test_set)
+{
+	// Get the number of Vulkan devices in the system:
+	uint32_t dcount;
+	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, nullptr));
+
+	// Get the list of VkPhysicalDevice
+	std::vector<VkPhysicalDevice> pds(dcount);
+	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, pds.data()));
+
+	// Launch device setup tasks, possibly in parallel.
+	std::vector<std::future<std::unique_ptr<ShadowProcessor>>> create_work;
+	create_work.reserve(dcount);
+	for(auto &pd: pds) {
+		create_work.push_back(std::async(
+			create_if_has_graphics, pd, shadow_mesh, test_set)
+		);
+	}
+
+	std::vector<std::unique_ptr<ShadowProcessor>> processors;
+	processors.reserve(dcount);
+	std::cout << "Suitable Vulkan devices found:\n";
+	for(auto &f: create_work) {
+		try{
+			processors.push_back(f.get());
+			std::cout << " - "<< processors.back()->get_name()
+				<< '\n';
+		} catch(const std::exception &e) {}
+	}
+	if(processors.empty()) {
+		std::cout << " None! Exiting due to lack of "
+			"suitable Vulkan devices!\n";
+		exit(1);
+	}
+
+	return processors;
 }
 
 UVkInstance initialize_vulkan()
@@ -195,43 +237,42 @@ UVkInstance initialize_vulkan()
 	return vk;
 }
 
-static std::vector<std::unique_ptr<ShadowProcessor>>
-create_procs_from_devices(VkInstance vk, const Mesh &mesh)
+void dump_vtk(const char* fname, const Mesh& mesh, double *result)
 {
-	// Get the number of Vulkan devices in the system:
-	uint32_t dcount;
-	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, nullptr));
+	std::ofstream fd(fname);
 
-	// Get the list of VkPhysicalDevice
-	std::vector<VkPhysicalDevice> pds(dcount);
-	chk_vk(vkEnumeratePhysicalDevices(vk, &dcount, pds.data()));
+	fd << "# vtk DataFile Version 3.0\n"
+		"Daylight solar incidence\n"
+		"ASCII\n"
+		"DATASET POLYDATA\n"
+		"POINTS " << mesh.vertices.size() << " float\n";
 
-	// Launch device setup tasks, possibly in parallel.
-	std::vector<std::future<std::unique_ptr<ShadowProcessor>>> create_work;
-	create_work.reserve(dcount);
-	for(auto &pd: pds) {
-		create_work.push_back(std::async(
-			create_if_has_graphics, pd, mesh)
-		);
+	for(auto& p: mesh.vertices) {
+		fd << p.position.x << ' '
+			<< p.position.y << ' '
+			<< p.position.z << '\n';
 	}
 
-	std::vector<std::unique_ptr<ShadowProcessor>> processors;
-	processors.reserve(dcount);
-	std::cout << "Suitable Vulkan devices found:\n";
-	for(auto &f: create_work) {
-		try{
-			processors.push_back(f.get());
-			std::cout << " - "<< processors.back()->get_name()
-				<< '\n';
-		} catch(const std::exception &e) {}
-	}
-	if(processors.empty()) {
-		std::cout << " None! Exiting due to lack of "
-			"suitable Vulkan devices!\n";
-		exit(1);
+	uint32_t face_count = mesh.indices.size() / 3;
+	fd << "POLYGONS " << face_count << ' ' << face_count * 4 << '\n';
+	{
+		auto ptr = mesh.indices.begin();
+		for(uint32_t i = 0; i < face_count; ++i) {
+			fd << '3';
+			for(uint8_t j = 0; j < 3; ++j) {
+				fd << ' ' << *ptr++;
+			}
+			fd << '\n';
+		}
 	}
 
-	return processors;
+	fd << "POINT_DATA " << mesh.vertices.size() << "\n"
+		"SCALARS incidence float 1\n"
+		"LOOKUP_TABLE default\n";
+
+	for(uint32_t i = 0; i < mesh.vertices.size(); ++i) {
+		fd << result[i] << '\n';
+	}
 }
 
 int main(int argc, char *argv[])
@@ -246,18 +287,19 @@ int main(int argc, char *argv[])
 	UVkInstance vk = initialize_vulkan();
 
 	std::vector<std::unique_ptr<ShadowProcessor>> ps;
-	size_t num_points;
+	Mesh test_mesh = load_scene(argv[3]);
 	{
-		auto scene_mesh = load_scene(argv[3]);
-		num_points = scene_mesh.vertices.size();
+		auto shadow_mesh = test_mesh;
+		refine(test_mesh, 0.05);
+
 		ps = create_procs_from_devices(vk.get(),
-			std::move(scene_mesh));
+			shadow_mesh, test_mesh.vertices);
 	}
 
 	calculate_yearly_incidence(lat, lon, 0, ps);
 
 	// Get results:
-	std::vector<double> result(num_points, 0.0f);
+	std::vector<double> result(test_mesh.vertices.size(), 0.0f);
 	Vec3 total{0.0, 0.0, 0.0};
 	size_t count = 0;
 	for(auto &p: ps) {
@@ -271,7 +313,7 @@ int main(int argc, char *argv[])
 	for(double &r: result) {
 		r *= icount;
 	}
-	ps[0]->dump_vtk("incidence.vtk", result.data());
+	dump_vtk("incidence.vtk", test_mesh, result.data());
 
 	std::cout << "\nTotal positions considered: " << count
 		<< "\n\nWorkload distribution:\n";

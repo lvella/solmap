@@ -7,6 +7,12 @@
 
 struct VertexData
 {
+	VertexData() = default;
+	VertexData(const Vec3& p, const Vec3& n):
+		position(p),
+		normal(n)
+	{}
+
 	Vec3 position;
 	float a;
 	Vec3 normal;
@@ -20,3 +26,5 @@ struct Mesh
 };
 
 Mesh load_scene(const char* filename);
+
+void refine(Mesh& m, float max_length);

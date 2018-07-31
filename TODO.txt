@@ -1,3 +1,5 @@
+ - Use device local memory for mesh buffer.
+
  - Use better time discretization.
     - Work with variable time steps.
  - Calculate results averaging over the whole year (not just daytime).

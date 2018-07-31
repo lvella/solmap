@@ -7,7 +7,7 @@
 
 #include "float.hpp"
 #include "vk_manager.hpp"
-#include "scene_loader.hpp"
+#include "mesh_tools.hpp"
 #include "buffer.hpp"
 
 extern "C" {
@@ -30,27 +30,24 @@ class TaskSlot
 public:
 	TaskSlot(VkDevice device,
 		const VkPhysicalDeviceMemoryProperties& mem_props,
-		uint32_t idx,
-		VkQueue graphic_queue,
-		const Mesh& mesh);
+		uint32_t idx, uint32_t num_points,
+		VkQueue graphic_queue);
 
 	void create_command_buffer(
 		const VkPhysicalDeviceMemoryProperties& mem_props,
-		const class ShadowProcessor& sp, VkCommandPool command_pool,
+		const class ShadowProcessor& sp,
+		VkCommandPool command_pool,
+		VkBuffer test_set,
 		BufferTransferer &btransf);
 
-	void fill_command_buffer(const ShadowProcessor& sp);
+	void fill_command_buffer(const ShadowProcessor& sp,
+		const MeshBuffers &mesh);
 
 	void compute_frame(const Vec3& suns_direction);
 
 	VkFence get_fence()
 	{
 		return frame_fence.get();
-	}
-
-	MeshBuffers& get_mesh()
-	{
-		return scene_mesh;
 	}
 
 	void accumulate_result(VkDevice d,
@@ -61,8 +58,6 @@ public:
 private:
 	uint32_t qf_idx;
 	VkQueue queue;
-
-	MeshBuffers scene_mesh;
 
 	// Global task information,
 	// UniformDataInput structure,
@@ -109,7 +104,8 @@ public:
 		UVkDevice&& device,
 		std::vector<std::pair<uint32_t,
 			std::vector<VkQueue>>>&& queues,
-		const Mesh &mesh);
+		const Mesh &mesh,
+		const std::vector<VertexData>& test_set);
 
 	ShadowProcessor(ShadowProcessor&& other) = default;
 	ShadowProcessor &operator=(ShadowProcessor&& other) = default;
@@ -139,8 +135,6 @@ public:
 	}
 
 	void accumulate_result(double *accum);
-
-	void dump_vtk(const char* fname, double *result);
 
 private:
 	friend class TaskSlot;
@@ -178,6 +172,10 @@ private:
 	UVkDescriptorSetLayout comp_sampler_dset_layout;
 	UVkPipelineLayout compute_pipeline_layout;
 	UVkComputePipeline compute_pipeline;
+
+	// Const data, one per queue family:
+	std::vector<MeshBuffers> mesh;
+	std::vector<AccessibleBuffer> test_buffer;
 
 	// Memory pools:
 	UVkDescriptorPool desc_pool;
