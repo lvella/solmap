@@ -39,7 +39,8 @@ public:
     ):
 	d(device),
 	m(memory),
-	o(offset)
+	o(offset),
+	sz(size)
     {
 	// Map the memory range.
 	chk_vk(vkMapMemory(d, m, offset, size, 0, &data));
@@ -67,7 +68,7 @@ public:
 	    nullptr,
 	    m,
 	    o,
-	    VK_WHOLE_SIZE
+	    sz
 	};
 	vkFlushMappedMemoryRanges(d, 1, &range);
     }
@@ -76,6 +77,7 @@ private:
     VkDevice d;
     VkDeviceMemory m;
     VkDeviceSize o;
+    VkDeviceSize sz;
     void *data;
 };
 

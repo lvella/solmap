@@ -80,7 +80,7 @@ Buffer::Buffer(VkDevice d,
 	};
 
 	// Associate it with the buffer:
-	vkBindBufferMemory(d, buf.get(), mem.get(), 0);
+	chk_vk(vkBindBufferMemory(d, buf.get(), mem.get(), 0));
 }
 
 AccessibleBuffer::AccessibleBuffer(

@@ -123,6 +123,7 @@ public:
 
 		// Record and execute command buffer to copy
 		// the memory from the device:
+		MemMapper map{device, tmp->mem.get()};
 		if(direction & HOST_WILL_READ_BIT) {
 			// Record the command buffer:
 			chk_vk(vkBeginCommandBuffer(cb, &cbbi));
@@ -141,7 +142,6 @@ public:
 
 		// Execute the operation over the memory:
 		{
-			MemMapper map{device, tmp->mem.get()};
 			func(map.get<T>());
 		}
 
