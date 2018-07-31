@@ -1,14 +1,29 @@
+ - Bug: artifacts when there are too many testing points.
+    - Culprit is Intel GPU, investigate how to fix.
+
  - Use device local memory for mesh buffer.
 
  - Use better time discretization.
     - Work with variable time steps.
+
  - Calculate results averaging over the whole year (not just daytime).
- - Refine the mesh, possibly with tesselation shader.
-    - In compute phase, use a single storage buffer for vertex data and
-      output, initializing it with the tesselation shader.
+
+ - Render result as 0 to 1, where 1 is the best possible insolation.
+    - Output both normalized and non-normalized values.
+
  - Use a thread pool with the optimal number of threads for initialization tasks:
     - Create TaskSlots in parallel, too.
+
+ - Refine mesh in GPU.
+
+ - Add option to specify that refinement is to be used.
+
+ - Add option to specify which GPUs to use.
+
+ - Add option to specify north and up vectors.
+
  - Accumulate results for the same device in a compute shader:
+    - Profile to see if this is worthwhile.
     - Allocate a single memory region for all result buffers.
 
  - Performance experiments:
