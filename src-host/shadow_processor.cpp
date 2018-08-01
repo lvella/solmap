@@ -160,7 +160,6 @@ TaskSlot::TaskSlot(
 }
 
 void TaskSlot::create_command_buffer(
-	const VkPhysicalDeviceMemoryProperties& mem_props,
 	const ShadowProcessor& sp, VkCommandPool command_pool,
 	VkBuffer test_buffer, BufferTransferer &btransf)
 {
@@ -285,25 +284,11 @@ void TaskSlot::create_command_buffer(
 	});
 
 	// Zero the result buffer
-	if(result_buf.is_host_visible){
-		MemMapper map{sp.d.get(), result_buf.mem.get()};
-		std::fill_n(map.get<float*>(),
-			sp.num_points,
-			0.0f
-		);
-	} else {
-		btransf.transfer<float*>(sp.d.get(), mem_props, cmd_bufs[0],
-			queue, result_buf.buf.get(),
-			sp.num_points,
-			HOST_WILL_WRITE_BIT,
-			[&](float* ptr) {
-				std::fill_n(ptr,
-					sp.num_points,
-					0.0f
-				);
-			}
-		);
-	}
+	btransf.transfer<float*>(result_buf, sp.num_points,
+		HOST_WILL_WRITE_BIT, [&](float* ptr) {
+			std::fill_n(ptr, sp.num_points, 0.0f);
+		}
+	);
 }
 
 void TaskSlot::fill_command_buffer(const ShadowProcessor& sp,
@@ -434,27 +419,16 @@ void TaskSlot::compute_frame(const Vec3& direction)
 	vkQueueSubmit(queue, 1, &si, frame_fence.get());
 }
 
-void TaskSlot::accumulate_result(VkDevice d,
-	const VkPhysicalDeviceMemoryProperties& mem_props,
-	BufferTransferer& btransf,
+void TaskSlot::accumulate_result(BufferTransferer& btransf,
 	uint32_t count, double* accum)
 {
-	if(result_buf.is_host_visible) {
-		MemMapper map{d, result_buf.mem.get()};
-		auto ptr = map.get<float*>();
-		for(uint32_t i = 0; i < count; ++i) {
-			accum[i] += ptr[i];
-		}
-	} else {
-		btransf.transfer<float*>(d, mem_props, cmd_bufs[0],
-			queue, result_buf.buf.get(), count,
-			HOST_WILL_READ_BIT, [&](float* ptr) {
-				for(uint32_t i = 0; i < count; ++i) {
-					accum[i] += ptr[i];
-				}
+	btransf.transfer<float*>(result_buf, count,
+		HOST_WILL_READ_BIT, [&](float* ptr) {
+			for(uint32_t i = 0; i < count; ++i) {
+				accum[i] += ptr[i];
 			}
-		);
-	}
+		}
+	);
 }
 
 WorkGroupSplit::WorkGroupSplit(const VkPhysicalDeviceLimits &dlimits,
@@ -473,7 +447,7 @@ ShadowProcessor::ShadowProcessor(
 	VkPhysicalDevice pdevice,
 	const VkPhysicalDeviceProperties &pd_props,
 	UVkDevice&& device,
-	std::vector<std::pair<uint32_t, std::vector<VkQueue>>>&& queues,
+	std::vector<std::pair<uint32_t, std::vector<VkQueue>>>&& qfamilies,
 	const Mesh &shadow_mesh, const std::vector<VertexData>& test_set
 ):
 	device_name{pd_props.deviceName},
@@ -488,7 +462,7 @@ ShadowProcessor::ShadowProcessor(
 	create_compute_pipeline();
 
 	unsigned num_slots = 0;
-	for(auto &qf: queues) {
+	for(auto &qf: qfamilies) {
 		num_slots += qf.second.size() * SLOTS_PER_QUEUE;
 	}
 
@@ -520,11 +494,9 @@ ShadowProcessor::ShadowProcessor(
 	// Get the memory properties needed to allocate the buffer.
 	vkGetPhysicalDeviceMemoryProperties(pdevice, &mem_props);
 
-	command_pool.reserve(queues.size());
+	command_pool.reserve(qfamilies.size());
 	task_pool.reserve(num_slots);
-	for(auto &qf: queues) {
-		BufferTransferer btransf;
-
+	for(auto &qf: qfamilies) {
 		// Allocation pool for command buffer:
 		command_pool.push_back(UVkCommandPool{VkCommandPoolCreateInfo{
 			VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -542,31 +514,18 @@ ShadowProcessor::ShadowProcessor(
 		);
 
 		// Fill the test buffer with the test points.
-		if(test_buffer.back().is_host_visible) {
-			MemMapper map{d.get(), test_buffer.back().mem.get()};
-			std::copy(test_set.begin(), test_set.end(),
-				map.get<VertexData*>());
-		} else {
-			// Temporary command buffer, just for this copy
-			UVkCommandBuffers cb{d.get(), VkCommandBufferAllocateInfo{
-				VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-				nullptr,
-				command_pool.back().get(),
-				VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-				1
-			}};
+		BufferTransferer btransf{d.get(), mem_props,
+			command_pool.back().get(), qf.second[0]};
 
-			btransf.transfer<VertexData*>(d.get(), mem_props, cb[0],
-				qf.second[0], test_buffer.back().buf.get(),
-				test_set.size(), HOST_WILL_WRITE_BIT,
-				[&](VertexData* ptr) {
-					std::copy(test_set.begin(),
-						test_set.end(),
-						ptr
-					);
-				}
-			);
-		}
+		btransf.transfer<VertexData*>(test_buffer.back(),
+			test_set.size(), HOST_WILL_WRITE_BIT,
+			[&](VertexData* ptr) {
+				std::copy(test_set.begin(),
+					test_set.end(),
+					ptr
+				);
+			}
+		);
 
 		// Create one task slot per queue,
 		// written buffers will be local to it.
@@ -576,7 +535,7 @@ ShadowProcessor::ShadowProcessor(
 				task_pool.emplace_back(d.get(),	mem_props,
 					qf.first, num_points, q);
 
-				task_pool.back().create_command_buffer(mem_props,
+				task_pool.back().create_command_buffer(
 					*this, command_pool.back().get(),
 					test_buffer.back().buf.get(), btransf
 				);
@@ -1051,10 +1010,11 @@ void ShadowProcessor::process(const AngularPosition& p)
 void ShadowProcessor::accumulate_result(double *accum)
 {
 	chk_vk(vkDeviceWaitIdle(d.get()));
-	BufferTransferer btransf;
+	// TODO: this is wrong: must separate btransf by queue family.
+	BufferTransferer btransf{d.get(), mem_props,
+		command_pool[0].get(), task_pool[0].get_queue()};
 	for(auto& t: task_pool) {
-		t.accumulate_result(d.get(), mem_props,
-			btransf, num_points, accum);
+		t.accumulate_result(btransf, num_points, accum);
 	}
 	chk_vk(vkDeviceWaitIdle(d.get()));
 }

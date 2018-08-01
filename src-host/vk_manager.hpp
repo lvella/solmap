@@ -91,6 +91,10 @@ public:
 	{
 	    return bufs[idx];
 	}
+	operator bool () const
+	{
+		return bool{bufs};
+	}
 
 private:
 	struct Deleter {

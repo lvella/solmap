@@ -63,11 +63,18 @@ struct MaybeStagedBuffer: public Buffer
 class BufferTransferer
 {
 public:
-	template <typename T, typename F>
-	void transfer(VkDevice device,
+	BufferTransferer(VkDevice device,
 		const VkPhysicalDeviceMemoryProperties& mem_props,
-		VkCommandBuffer cb, VkQueue q, VkBuffer buf,
-		uint32_t count, BufferAccessDirection direction, const F& func)
+		VkCommandPool cmd_pool, VkQueue queue):
+		d{device},
+		mem_props{mem_props},
+		cp{cmd_pool},
+		q{queue}
+	{}
+
+	template <typename T, typename F>
+	void indirect_transfer(const VkBuffer buf, uint32_t count,
+		BufferAccessDirection direction, const F& func)
 	{
 		const uint32_t size = count *
 			sizeof(typename std::remove_pointer<T>::type);
@@ -75,7 +82,7 @@ public:
 		// If our temporary buffer is not big enough,
 		// allocate it.
 		if(tmp_size < size) {
-			tmp = std::make_unique<Buffer>(device,
+			tmp = std::make_unique<Buffer>(d,
 				mem_props,
 				VK_BUFFER_USAGE_TRANSFER_SRC_BIT
 				| VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -85,6 +92,18 @@ public:
 			tmp_size = size;
 		}
 		assert(tmp);
+
+		// If command buffer is not allocated, do it.
+		if(!cb) {
+			cb = UVkCommandBuffers{d, VkCommandBufferAllocateInfo{
+				VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+				nullptr,
+				cp,
+				VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+				1
+			}};
+		}
+
 
 		// Range to flush and invalidate.
 		const VkMappedMemoryRange range {
@@ -116,19 +135,19 @@ public:
 			nullptr,
 			nullptr,
 			1,
-			&cb,
+			&cb[0],
 			0,
 			nullptr
 		};
 
 		// Record and execute command buffer to copy
 		// the memory from the device:
-		MemMapper map{device, tmp->mem.get()};
+		MemMapper map{d, tmp->mem.get()};
 		if(direction & HOST_WILL_READ_BIT) {
 			// Record the command buffer:
-			chk_vk(vkBeginCommandBuffer(cb, &cbbi));
-			vkCmdCopyBuffer(cb, buf, tmp->buf.get(), 1, &region);
-			chk_vk(vkEndCommandBuffer(cb));
+			chk_vk(vkBeginCommandBuffer(cb[0], &cbbi));
+			vkCmdCopyBuffer(cb[0], buf, tmp->buf.get(), 1, &region);
+			chk_vk(vkEndCommandBuffer(cb[0]));
 
 			// Dispatch it:
 			chk_vk(vkQueueSubmit(q, 1, &si, nullptr));
@@ -137,7 +156,7 @@ public:
 			chk_vk(vkQueueWaitIdle(q));
 
 			// Retrieve the data to host readable memory.
-			chk_vk(vkInvalidateMappedMemoryRanges(device, 1, &range));
+			chk_vk(vkInvalidateMappedMemoryRanges(d, 1, &range));
 		}
 
 		// Execute the operation over the memory:
@@ -149,12 +168,12 @@ public:
 		// copy from host to device:
 		if(direction & HOST_WILL_WRITE_BIT) {
 			// Flush the mapped region:
-			chk_vk(vkFlushMappedMemoryRanges(device, 1, &range));
+			chk_vk(vkFlushMappedMemoryRanges(d, 1, &range));
 
 			// Record the command buffer:
-			chk_vk(vkBeginCommandBuffer(cb, &cbbi));
-			vkCmdCopyBuffer(cb, tmp->buf.get(), buf, 1, &region);
-			chk_vk(vkEndCommandBuffer(cb));
+			chk_vk(vkBeginCommandBuffer(cb[0], &cbbi));
+			vkCmdCopyBuffer(cb[0], tmp->buf.get(), buf, 1, &region);
+			chk_vk(vkEndCommandBuffer(cb[0]));
 
 			// Dispatch it:
 			chk_vk(vkQueueSubmit(q, 1, &si, nullptr));
@@ -164,7 +183,27 @@ public:
 		}
 	}
 
+	// Uses the best transfer method for the AccessibleBuffer
+	template <typename T, typename F>
+	void transfer(const AccessibleBuffer& buf, uint32_t count,
+		BufferAccessDirection direction, const F& func)
+	{
+		if(buf.is_host_visible) {
+			MemMapper map{d, buf.mem.get()};
+			func(map.get<T>());
+		} else {
+			indirect_transfer<T>(buf.buf.get(), count,
+				direction, func);
+		}
+	}
+
 private:
+	VkDevice d;
+	const VkPhysicalDeviceMemoryProperties& mem_props;
+	VkCommandPool cp;
+	VkQueue q;
+
+	UVkCommandBuffers cb;
 	std::unique_ptr<Buffer> tmp;
 	uint32_t tmp_size = 0;
 };

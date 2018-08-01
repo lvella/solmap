@@ -34,7 +34,6 @@ public:
 		VkQueue graphic_queue);
 
 	void create_command_buffer(
-		const VkPhysicalDeviceMemoryProperties& mem_props,
 		const class ShadowProcessor& sp,
 		VkCommandPool command_pool,
 		VkBuffer test_set,
@@ -50,9 +49,12 @@ public:
 		return frame_fence.get();
 	}
 
-	void accumulate_result(VkDevice d,
-		const VkPhysicalDeviceMemoryProperties& mem_props,
-		BufferTransferer& btransf,
+	VkQueue get_queue()
+	{
+		return queue;
+	}
+
+	void accumulate_result(BufferTransferer& btransf,
 		uint32_t count, double* accum);
 
 private:
