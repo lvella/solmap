@@ -37,7 +37,7 @@ MeshBuffers::MeshBuffers(VkDevice device,
 ):
 	vertex(device, mem_props,
 		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-		mesh.vertices.size() * sizeof(VertexData),
+		mesh.vertices.size() * sizeof(Vec3),
 		HOST_WILL_WRITE_BIT
 	),
 	index(device, mem_props,
@@ -48,10 +48,11 @@ MeshBuffers::MeshBuffers(VkDevice device,
 	idx_count(mesh.indices.size())
 {
 	// Copy the vertex data to device memory.
-	btransf.transfer<VertexData*>(vertex, mesh.vertices.size(),
-		HOST_WILL_WRITE_BIT, [&](VertexData* ptr) {
-			std::copy(mesh.vertices.begin(), mesh.vertices.end(),
-				ptr);
+	btransf.transfer<Vec3*>(vertex, mesh.vertices.size(),
+		HOST_WILL_WRITE_BIT, [&](Vec3* ptr) {
+			for(const auto& v: mesh.vertices) {
+				*ptr++ = v.position;
+			}
 		}
 	);
 
@@ -578,7 +579,7 @@ void ShadowProcessor::create_render_pipeline()
 	// Vertex data description:
 	const VkVertexInputBindingDescription vibd {
 		0,
-		sizeof(VertexData),
+		sizeof(Vec3),
 		VK_VERTEX_INPUT_RATE_VERTEX
 	};
 

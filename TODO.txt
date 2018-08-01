@@ -6,8 +6,6 @@
  - Create QueueFamilyManager between ShadowProcessor and TaskSlot to manage per
    queue family stuff (constant buffers, command pools, etc).
 
- - Remove normals from vertex attribute.
-
  - Use better time discretization.
     - Work with variable time steps.
 
