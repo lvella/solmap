@@ -18,10 +18,10 @@ struct MeshBuffers
 {
 	MeshBuffers(VkDevice device,
 		const VkPhysicalDeviceMemoryProperties& mem_props,
-		const Mesh& mesh);
+		const Mesh& mesh,  BufferTransferer& btransf);
 
-	Buffer vertex;
-	Buffer index;
+	AccessibleBuffer vertex;
+	AccessibleBuffer index;
 	uint32_t idx_count;
 };
 

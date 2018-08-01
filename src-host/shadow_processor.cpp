@@ -33,35 +33,35 @@ static Vec4 rot_from_unit_a_to_unit_b(Vec3 a, Vec3 b)
 
 MeshBuffers::MeshBuffers(VkDevice device,
 	const VkPhysicalDeviceMemoryProperties& mem_props,
-	const Mesh& mesh
+	const Mesh& mesh, BufferTransferer& btransf
 ):
 	vertex(device, mem_props,
 		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		mesh.vertices.size() * sizeof(VertexData),
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		HOST_WILL_WRITE_BIT
 	),
 	index(device, mem_props,
 		VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		mesh.indices.size() * sizeof(uint32_t),
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		HOST_WILL_WRITE_BIT
 	),
 	idx_count(mesh.indices.size())
 {
-	{
-		// Copy the vertex data to device memory.
-		MemMapper map(device, vertex.mem.get());
-		std::copy(mesh.vertices.begin(), mesh.vertices.end(),
-			map.get<VertexData*>());
-	}
+	// Copy the vertex data to device memory.
+	btransf.transfer<VertexData*>(vertex, mesh.vertices.size(),
+		HOST_WILL_WRITE_BIT, [&](VertexData* ptr) {
+			std::copy(mesh.vertices.begin(), mesh.vertices.end(),
+				ptr);
+		}
+	);
 
-	{
-		// Copy the index data to device memory.
-		MemMapper map(device, index.mem.get());
-		std::copy(mesh.indices.begin(), mesh.indices.end(),
-			map.get<uint32_t*>());
-	}
+	// Copy the index data to device memory.
+	btransf.transfer<uint32_t*>(index, mesh.indices.size(),
+		HOST_WILL_WRITE_BIT, [&](uint32_t *ptr) {
+			std::copy(mesh.indices.begin(), mesh.indices.end(),
+				ptr);
+		}
+	);
 }
 
 TaskSlot::TaskSlot(
@@ -505,8 +505,11 @@ ShadowProcessor::ShadowProcessor(
 			qf.first
 		}, d.get()});
 
+		BufferTransferer btransf{d.get(), mem_props,
+			command_pool.back().get(), qf.second[0]};
+
 		// Allocate constant buffers for this queue family:
-		mesh.emplace_back(d.get(), mem_props, shadow_mesh);
+		mesh.emplace_back(d.get(), mem_props, shadow_mesh, btransf);
 		test_buffer.emplace_back(d.get(), mem_props,
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 			test_set.size() * sizeof(VertexData),
@@ -514,9 +517,6 @@ ShadowProcessor::ShadowProcessor(
 		);
 
 		// Fill the test buffer with the test points.
-		BufferTransferer btransf{d.get(), mem_props,
-			command_pool.back().get(), qf.second[0]};
-
 		btransf.transfer<VertexData*>(test_buffer.back(),
 			test_set.size(), HOST_WILL_WRITE_BIT,
 			[&](VertexData* ptr) {

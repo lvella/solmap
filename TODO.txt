@@ -6,8 +6,6 @@
  - Create QueueFamilyManager between ShadowProcessor and TaskSlot to manage per
    queue family stuff (constant buffers, command pools, etc).
 
- - Use device local memory for mesh buffer.
-
  - Remove normals from vertex attribute.
 
  - Use better time discretization.
