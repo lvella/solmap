@@ -30,9 +30,9 @@ You may notice the azimuth suggested by the program for solar panel
 placement is not exactly the theoretical value expected for your latitude
 (it should be either 0° or 180°, depending whether the place is in the
 southern or northern hemisphere), but there is a small error of less than a
-tenth of a degree. This is due the time discretization error, because a day
-is not necessarily started with sun's altitude at zero, but at anywhere from
-zero to 5 minutes from that point.
+tenth of a degree. This seems to be due the time discretization error, because
+a day is not necessarily started with sun's altitude at zero, but at anywhere
+from zero to 5 minutes from that point.
 
 ## Dependencies
 
@@ -40,7 +40,8 @@ To build, you need:
  - Python 3 with CFFI, for Python interface;
  - GLM library, for linear algebra;
  - glslc command line tool, from shaderc package, to compile GLSL shaders
-into Vulkan's SPIR-V bytecode.
+into Vulkan's SPIR-V bytecode;
+ - Boost.Functional/Hash, for hash combining.
 
 To run, you need:
  - Python 3 with CFFI;
