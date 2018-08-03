@@ -5,7 +5,9 @@
 #include <future>
 #include <cmath>
 
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/geometric.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 #include "vk_manager.hpp"
 #include "concurrentqueue.hpp"
@@ -26,11 +28,17 @@ constexpr F to_rad(F deg)
 	return deg * M_PI / 180.0;
 }
 
-const Vec3 norm{0.0, 0.5*std::sqrt(2.0), -0.5*std::sqrt(2.0)};
+Vec3 to_vec(AngularPosition pos,
+	const Vec3& unit_north, const Vec3& unit_up, const Vec3& unit_east)
+{
+	return glm::rotate(glm::angleAxis(float(-pos.az), unit_up) *
+		glm::angleAxis(float(pos.alt), unit_east), unit_north);
+}
+
 
 void
-calculate_yearly_incidence(
-	real latitude, real longitude, real altitude,
+calculate_yearly_incidence(real latitude, real longitude, real altitude,
+	const Vec3& unit_north, const Vec3& unit_up, const Vec3& unit_east,
 	std::vector<std::unique_ptr<ShadowProcessor>> &processors
 )
 {
@@ -63,7 +71,11 @@ calculate_yearly_incidence(
 					break;
 				}
 
-				p->process(pos);
+				// Transforms the angular position into a unit
+				// vector pointing to the sun.
+				const Vec3 suns_direction = to_vec(pos,
+					unit_north, unit_up, unit_east);
+				p->process(suns_direction);
 			}
 		}));
 	}
@@ -296,7 +308,12 @@ int main(int argc, char *argv[])
 			shadow_mesh, test_mesh.vertices);
 	}
 
-	calculate_yearly_incidence(lat, lon, 0, ps);
+	// TODO: take as command line input:
+	const Vec3 unit_north{0, 0, -1};
+	const Vec3 unit_up{0, 1, 0};
+	const Vec3 unit_east{1, 0, 0};
+	calculate_yearly_incidence(lat, lon, 0,
+		unit_north, unit_up, unit_east, ps);
 
 	// Get results:
 	std::vector<double> result(test_mesh.vertices.size(), 0.0f);

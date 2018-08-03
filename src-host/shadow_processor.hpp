@@ -124,7 +124,7 @@ public:
 		return device_name;
 	}
 
-	void process(const AngularPosition& p);
+	void process(const Vec3& suns_direction);
 
 	const Vec3& get_sum() const
 	{

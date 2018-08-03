@@ -1,7 +1,6 @@
 #include <cstddef>
 
 #include <assimp/scene.h>
-#include <glm/glm.hpp>
 
 #include "shadow_processor.hpp"
 
@@ -9,7 +8,7 @@ static const uint32_t frame_size = 2048;
 
 struct GlobalInputData
 {
-	Vec4 orientation;
+	Quat orientation;
 	Vec3 suns_direction;
 };
 
@@ -25,9 +24,9 @@ uint32_t ptr_delta(const T1* from, const T2* to)
 // Get quaternion rotation from unit vector a to unit vector b.
 // Doesn't work if a and b are opposites.
 // Lets assume, for now, that it never happens.
-static Vec4 rot_from_unit_a_to_unit_b(Vec3 a, Vec3 b)
+static Quat rot_from_unit_a_to_unit_b(Vec3 a, Vec3 b)
 {
-	Vec4 ret{glm::cross(a,b), 1.0 + glm::dot(a, b)};
+	Quat ret{1.0f + glm::dot(a, b), glm::cross(a, b)};
 	return glm::normalize(ret);
 }
 
@@ -955,27 +954,8 @@ void ShadowProcessor::create_compute_pipeline()
 	}, d.get(), nullptr, 1};
 }
 
-void ShadowProcessor::process(const AngularPosition& p)
+void ShadowProcessor::process(const Vec3& sun)
 {
-	// Transforms into a unit vector pointing to the sun.
-	// We convention Y as upwards and -z as N, thus
-	// lookig from above, we have:
-	//
-	//        -z, N
-	//           |
-	//           |
-	// -x, O ----+---- +x, E
-	//           |
-	//           |
-	//        +z, S
-	real c = std::cos(p.alt);
-
-	Vec3 sun{
-		std::sin(p.az) * c,
-		std::sin(p.alt),
-		-std::cos(p.az) * c
-	};
-
 	sum += sun;
 	++count;
 
