@@ -28,6 +28,13 @@ FLAGS = ${OPTFLAGS} -pthread -I${BINCDIR}
 INC_SHADERS = $(addprefix ${BINCDIR}/,$(SHADERS:=.inc))
 OBJS = $(addprefix ${BDIR}/,$(MODULES:=.o))
 
+all: ${BDIR}/solmap ${BDIR}/libwgs84.so
+
+${BDIR}/libwgs84.so: | build
+	make -C external/libwgs84 build/libwgs84.so
+	mv external/libwgs84/build/libwgs84.so build
+	make -C external/libwgs84 clean
+
 ${BDIR}/solmap: ${INC_SHADERS} ${OBJS}
 	${CXX} -o ${BDIR}/solmap ${OBJS} ${FLAGS} ${LIBS}
 
@@ -55,7 +62,7 @@ ${BDIR}:
 ${BINCDIR}: | ${BDIR}
 	mkdir ${BINCDIR}
 
-.PHONY: clean compilerflags
+.PHONY: clean compilerflags all
 
 compilerflags:
 	@echo ${FLAGS}
