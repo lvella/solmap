@@ -28,11 +28,20 @@ FLAGS = ${OPTFLAGS} -pthread -I${BINCDIR}
 INC_SHADERS = $(addprefix ${BINCDIR}/,$(SHADERS:=.inc))
 OBJS = $(addprefix ${BDIR}/,$(MODULES:=.o))
 
-all: ${BDIR}/solmap ${BDIR}/libwgs84.so
+all: ${BDIR}/solmap ${BDIR}/gps_converter.so
 
-${BDIR}/libwgs84.so: | build
-	make -C external/libwgs84 build/libwgs84.so
-	mv external/libwgs84/build/libwgs84.so build
+${BDIR}/gps_converter.so: ${BDIR}/libwgs84.a ${BDIR}/gps_converter.c | ${BDIR}
+	${CC} -shared -fPIC `pkg-config python3 --cflags --libs` -Iexternal/libwgs84/src ${FLAGS} ${BDIR}/gps_converter.c  ${BDIR}/libwgs84.a -o ${BDIR}/gps_converter.so
+
+${BDIR}/gps_converter.c: georeferencer_build.py | ${BDIR}
+	( \
+		. venv/bin/activate; \
+		python georeferencer_build.py \
+	)
+
+${BDIR}/libwgs84.a: | ${BDIR}
+	make -C external/libwgs84 build/libwgs84.a FLAGS="-flto -fPIC $(OPTFLAGS)"
+	mv external/libwgs84/build/libwgs84.a build
 	make -C external/libwgs84 clean
 
 ${BDIR}/solmap: ${INC_SHADERS} ${OBJS}

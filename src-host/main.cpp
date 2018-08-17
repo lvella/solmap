@@ -204,6 +204,7 @@ create_procs_from_devices(VkInstance vk,
 		create_work.push_back(std::async(
 			create_if_has_graphics, pd, shadow_mesh, test_set)
 		);
+		break;
 	}
 
 	std::vector<std::unique_ptr<ShadowProcessor>> processors;
@@ -302,7 +303,7 @@ int main(int argc, char *argv[])
 	Mesh test_mesh = load_scene(argv[3]);
 	{
 		auto shadow_mesh = test_mesh;
-		refine(test_mesh, 0.05);
+		//refine(test_mesh, 0.05);
 
 		ps = create_procs_from_devices(vk.get(),
 			shadow_mesh, test_mesh.vertices);
