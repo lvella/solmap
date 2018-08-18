@@ -2,7 +2,7 @@ CC = gcc
 CXX = g++ -std=c++17
 GLSLC = glslc
 
-OPTFLAGS = -g
+OPTFLAGS = -g #-Ofast -march=native -mtune=native -DNDEBUG -flto=4 -fno-fat-lto-objects
 
 MODULES = \
 	buffer \
