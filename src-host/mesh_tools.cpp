@@ -1,20 +1,49 @@
 #include <unordered_map>
 #include <stdexcept>
 #include <cmath>
+#include <chrono>
+
 #include <boost/functional/hash.hpp>
 
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <assimp/Importer.hpp>
 
+#include <CGAL/Min_sphere_of_spheres_d.h>
+#include <CGAL/Cartesian_d.h>
+
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
 
 #include "mesh_tools.hpp"
 
+// Find the bounding sphere to all points.
+static real bounding_sphere(const Mesh& m, Vec3& center)
+{
+	using K = CGAL::Cartesian_d<real>;
+	using Traits = CGAL::Min_sphere_of_spheres_d_traits_d<K,real,3>;
+	CGAL::Min_sphere_of_spheres_d<Traits> min_sphere;
+
+	for(const auto& v: m.vertices) {
+		min_sphere.insert(Traits::Sphere{
+			K::Point_d(
+				v.position.x,
+				v.position.y,
+				v.position.z
+			), 0.0f
+		});
+	}
+	std::copy(
+		min_sphere.center_cartesian_begin(),
+		min_sphere.center_cartesian_end(),
+		&center[0]
+	);
+	return min_sphere.radius();
+}
+
 // Code adapted from assimp library example
 // http://sir-kimmi.de/assimp/lib_html/usage.html
-Mesh load_scene(const char* filename)
+Mesh load_scene(const std::string& filename, real &scale)
 {
 	// Create an instance of the Importer class
 	Assimp::Importer importer;
@@ -31,9 +60,6 @@ Mesh load_scene(const char* filename)
 		aiComponent_CAMERAS |
 		aiComponent_MATERIALS
 	);
-
-	// Configure the importer to normalize the scene to [-1, 1] range
-	importer.SetPropertyBool(AI_CONFIG_PP_PTV_NORMALIZE, true);
 
 	// Leave only triangles in the mesh (not points nor lines)
 	importer.SetPropertyInteger(AI_CONFIG_PP_SBP_REMOVE,
@@ -85,15 +111,7 @@ Mesh load_scene(const char* filename)
 	ret.vertices.reserve(vert_count);
 	ret.indices.reserve(idx_count);
 
-
 	// Copy the vertex data.
-	// In the process, scale it so it will always stay
-	// within the render area. Since we know all the points
-	// are within [-1, 1], the biggest lenth possible is 2*sqrt(3)
-	// (the diagonal of a cube with L = 2). Thus, by scalig by
-	// 1/sqrt(3), we ensure que biggest lenght fits in the [-1, 1]
-	// square of the render area.
-	const real factor = 1.0 / std::sqrt(3.0);
 	for(size_t i = 0; i < scene->mNumMeshes; ++i) {
 		auto* m = scene->mMeshes[i];
 		for(size_t j = 0; j < m->mNumVertices; ++j) {
@@ -101,7 +119,7 @@ Mesh load_scene(const char* filename)
 			VertexData& v = ret.vertices.back();
 
 			for(uint8_t k = 0; k < 3; ++k) {
-				v.position[k] = factor * m->mVertices[j][k];
+				v.position[k] = m->mVertices[j][k];
 				v.normal[k] = m->mNormals[j][k];
 			}
 		}
@@ -112,6 +130,25 @@ Mesh load_scene(const char* filename)
 			}
 		}
 	}
+
+	// Find the bounding sphere of the point set:
+	auto ini = std::chrono::steady_clock::now();
+	Vec3 center;
+	const real radius = bounding_sphere(ret, center);
+	auto end = std::chrono::steady_clock::now();
+	std::cout << "Radius: " << radius << '\n'
+		<< "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - ini).count()/1000000.0 << std::endl;
+
+	// Transform mesh so radius is 1, so it always
+	// fit in the rendered buffer, no matter what
+	// rotation is applied.
+	for(auto& v: ret.vertices) {
+		v.position = (v.position - center) / radius;
+	}
+
+	// Update the user defined scale, so it applies to
+	// the newly normalized coordiates.
+	scale *= radius;
 
 	return ret;
 }

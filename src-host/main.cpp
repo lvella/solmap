@@ -4,6 +4,8 @@
 #include <thread>
 #include <future>
 #include <cmath>
+#include <regex>
+#include <getopt.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/geometric.hpp>
@@ -288,19 +290,128 @@ void dump_vtk(const char* fname, const Mesh& mesh, double *result)
 	}
 }
 
+void usage(const char *cmd)
+{
+	std::cout << "Usage:\n"
+		"    " << cmd << " [options] latitude longitude 3d-model\n"
+		"\n"
+		"Option:\n"
+		"    -q --rotation-quaternion=<w>:<x>:<y>:<z>\n"
+		"\tRotation quaternion applied to the 3-D model (default: no rotation).\n"
+		"\n"
+		"    -s --scale=<scalar>\n"
+		"\tScale applied to the 3-D model (default: 1.0).\n"
+		"\n"
+		"Parameters:\n"
+		"    latitude\n"
+		"\tLatitde, given as degrees in decimal notation,\n"
+		"\tnegative for south (e.g. -18.9118465).\n"
+		"\n"
+		"    longitude\n"
+		"\tLongitude, given as degress in decimal notation,\n"
+		"\tnegative for west (e.g. -48.2560091).\n"
+		"\n"
+		"    3d-model\n"
+		"\t3-D model where to compute the insolation.\n"
+		"\tAssumes a right-hand coordinate system.\n"
+		"\tExpected alignment after transformations:\n"
+		"\t+y is up; -z is north; +x is east.\n";
+	exit(1);
+}
+
+static real parse_real(const char* opt, const char* cmd)
+{
+	char *endptr;
+	real val = strtod(opt, &endptr);
+
+	if(endptr == opt) {
+		std::cout << "Invalid argument number \"" << opt << "\"." << std::endl;
+		usage(cmd);
+	}
+	return val;
+}
+
+static Quat parse_quat(const char* opt, const char* cmd)
+{
+	std::regex parser{"^(.+):(.+):(.+):(.+)$"};
+	std::cmatch match;
+
+	if(!std::regex_match(opt, match, parser)) {
+		usage(cmd);
+	}
+
+	Quat ret;
+	for(uint8_t i = 0; i < 4; ++i) {
+		ret[i] = parse_real(match[i+1].str().c_str(), cmd);
+	};
+
+	// I am not sure ret.w == ret[0]...
+	assert(&ret.x == &ret[0]);
+
+	return ret;
+}
+
+static void parse_args(int argc, char *argv[], glm::quat& rotation, real& scale,
+	real& lat, real& lon, std::string& mesh_name)
+{
+	const static struct option long_options[] =
+	{
+		{"rotation-quaternion", required_argument, nullptr, 'q'},
+		{"scale",               required_argument, nullptr, 's'},
+		{nullptr, 0, nullptr, 0}
+	};
+
+	rotation = Quat(1.0, 0.0, 0.0, 0.0);
+	scale = 1.0;
+
+	opterr = 0;
+	for(;;) {
+		int opt = getopt_long (argc, argv, "q:s:",
+			long_options, nullptr);
+
+		if(opt == -1) {
+			break;
+		}
+
+		switch(opt) {
+		case 'q':
+			rotation = parse_quat(optarg, argv[0]);
+			break;
+		case 's':
+			scale = parse_real(optarg, argv[0]);
+			break;
+		default:
+			goto out;
+		}
+	}
+	out:
+
+	if(argc - optind < 3)
+	{
+		std::cout << "Error: Missing arguments." << std::endl;
+		usage(argv[0]);
+	}
+
+	lat = parse_real(argv[optind], argv[0]);
+	lon = parse_real(argv[optind+1], argv[0]);
+	mesh_name = argv[optind+2];
+}
+
 int main(int argc, char *argv[])
 {
-	if(argc < 4) {
-		std::cout << "Please provide latitude, longitude and 3D model file.\n";
-		exit(1);
-	}
-	real lat = atof(argv[1]);
-	real lon = atof(argv[2]);
+	std::ios_base::sync_with_stdio(false);
+
+	real lat, lon;
+	std::string mesh_name;
+	Quat rotation;
+	real scale;
+
+	parse_args(argc, argv, rotation, scale, lat, lon, mesh_name);
 
 	UVkInstance vk = initialize_vulkan();
 
 	std::vector<std::unique_ptr<ShadowProcessor>> ps;
-	Mesh test_mesh = load_scene(argv[3]);
+	Mesh test_mesh = load_scene(mesh_name, scale);
 	{
 		auto shadow_mesh = test_mesh;
 		//refine(test_mesh, 0.05);

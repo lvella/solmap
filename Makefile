@@ -22,7 +22,7 @@ DDIR = src-device
 BDIR = build
 BINCDIR = build/include
 
-LIBS = $(shell pkg-config python3 --libs) -lvulkan -lassimp
+LIBS = $(shell pkg-config python3 --libs) -lvulkan -lassimp -lCGAL
 FLAGS = ${OPTFLAGS} -pthread -I${BINCDIR}
 
 INC_SHADERS = $(addprefix ${BINCDIR}/,$(SHADERS:=.inc))
