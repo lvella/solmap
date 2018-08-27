@@ -1,7 +1,6 @@
 #include <unordered_map>
 #include <stdexcept>
 #include <cmath>
-#include <chrono>
 
 #include <boost/functional/hash.hpp>
 
@@ -41,9 +40,29 @@ static real bounding_sphere(const Mesh& m, Vec3& center)
 	return min_sphere.radius();
 }
 
+// Finding the axis aligned bounding box.
+static real bounding_box(const Mesh& m, Vec3& center)
+{
+	Vec3 lo = m.vertices[0].position;
+	Vec3 hi = lo;
+
+	for(size_t i = 1; i < m.vertices.size(); ++i) {
+		const Vec3 &p = m.vertices[i].position;
+		for(size_t j = 0; j < 3; ++j) {
+			if(p[j] < lo[j]) {
+				lo[j] = p[j];
+			} else if(p[j] > hi[j]) {
+				hi[j] = p[j];
+			}
+		}
+	}
+	center = (lo + hi) * 0.5f;
+	return glm::distance(center, hi);
+}
+
 // Code adapted from assimp library example
 // http://sir-kimmi.de/assimp/lib_html/usage.html
-Mesh load_scene(const std::string& filename, real &scale)
+static Mesh import_scene_from_file(const std::string& filename)
 {
 	// Create an instance of the Importer class
 	Assimp::Importer importer;
@@ -78,11 +97,9 @@ Mesh load_scene(const std::string& filename, real &scale)
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_SortByPType |
 		aiProcess_RemoveComponent |
-		aiProcess_GenSmoothNormals |
 		aiProcess_PreTransformVertices |
 		//aiProcess_ValidateDataStructure |
 		aiProcess_ImproveCacheLocality |
-		aiProcess_FixInfacingNormals |
 		aiProcess_SortByPType |
 		aiProcess_FindDegenerates |
 		aiProcess_FindInvalidData
@@ -114,6 +131,12 @@ Mesh load_scene(const std::string& filename, real &scale)
 	// Copy the vertex data.
 	for(size_t i = 0; i < scene->mNumMeshes; ++i) {
 		auto* m = scene->mMeshes[i];
+		if(!m->mNormals) {
+			throw std::runtime_error(
+				"Missing normals on mesh.\n"
+			);
+		}
+
 		for(size_t j = 0; j < m->mNumVertices; ++j) {
 			ret.vertices.emplace_back();
 			VertexData& v = ret.vertices.back();
@@ -131,19 +154,31 @@ Mesh load_scene(const std::string& filename, real &scale)
 		}
 	}
 
-	// Find the bounding sphere of the point set:
-	auto ini = std::chrono::steady_clock::now();
-	Vec3 center;
-	const real radius = bounding_sphere(ret, center);
-	auto end = std::chrono::steady_clock::now();
-	std::cout << "Radius: " << radius << '\n'
-		<< "Time: " << std::chrono::duration_cast<std::chrono::microseconds>(end - ini).count()/1000000.0 << std::endl;
+	return ret;
+}
 
-	// Transform mesh so radius is 1, so it always
-	// fit in the rendered buffer, no matter what
-	// rotation is applied.
+Mesh load_scene(const std::string& filename, const Quat& rotation, real &scale)
+{
+	Mesh ret = import_scene_from_file(filename);
+
+	// Find the bounding sphere of the point set:
+	Vec3 center;
+	// TODO: THIS IS BUGGY:
+	/*const real radius = bounding_sphere(ret, center);*/
+
+	// Temporary fix while I don't know why bounding
+	// sphere algorithm doesn't work: use the bounding cube:
+	const real radius = bounding_box(ret, center);
+
+	// Transform mesh. Scale so radius is 1, thus it
+	// always fit in the rendered buffer, no matter what
+	// rotation is applied. Also applies the mesh rotation,
+	// so it doesn't need to be done on GPU for every
+	// rendered frame.
 	for(auto& v: ret.vertices) {
-		v.position = (v.position - center) / radius;
+		v.position = glm::rotate(rotation, v.position - center)
+			/ radius;
+		v.normal = glm::rotate(rotation, v.normal);
 	}
 
 	// Update the user defined scale, so it applies to

@@ -134,10 +134,13 @@ def transform(t, point):
 
 def model_to_gps_sq_error(transformation, gps_coords, model_coords):
     err = 0.0
-    for m, g in zip(model_coords, gps_coords):
+    for g, m in zip(gps_coords, model_coords):
         v = transform(transformation, m) - g
-        #err += np.dot(v, v)
-        err += math.sqrt(np.dot(v, v))
+        # Don't know why, but least squares seems
+        # to give a better orientation than least
+        # absolute difference.
+        err += np.dot(v, v)
+        #err += math.sqrt(np.dot(v, v))
     return err
 
 def find_median_coords(gps_coords):
@@ -151,14 +154,15 @@ def find_median_coords(gps_coords):
     return (lo + hi) * 0.5
 
 def main():
-    if len(sys.argv) < 1:
+    if len(sys.argv) < 3:
         print('Error: Missing arguments. Usage:\n'
-                + sys.argv[0] + ' <mve-scene-dir>')
+                + sys.argv[0] + ' <mve-scene-dir> <3d-mesh>')
         sys.exit(1)
 
-    # Load the two set of coordinates:
     scene_dir = sys.argv[1]
+    mesh_file = sys.argv[2]
 
+    # Load the two set of coordinates:
     try:
         gps_coords, model_coords = load_camera_coords(scene_dir)
     except FileNotFoundError as e:
@@ -196,8 +200,9 @@ def main():
     # Run the optimization:
     result = scipy.optimize.minimize(model_to_gps_sq_error,
         transformation, (gps_coords, model_coords))
+    del transformation
 
-    print('Error:',
+    print('Transformation error:',
         model_to_gps_sq_error(result.x, gps_coords, model_coords)**0.5,
         'm'
     )
@@ -231,10 +236,19 @@ def main():
     ))
 
     # Print the result:
+    quat = Quaternion(matrix=rotation.astype(np.double))
     print('Scale:', scale)
     print('Translation:', translation)
-    print('Rotation matrix:', rotation)
-    print('Rotation quaternion:', Quaternion(matrix=rotation.astype(np.double)))
+    print('Rotation quaternion:', quat)
+
+    script_path = os.path.dirname(os.path.realpath(__file__))
+
+    executable = os.path.join(script_path, 'build', 'solmap')
+    os.execl(executable, executable,
+        '--rotation-quaternion={}:{}:{}:{}'.format(*quat),
+        '--scale={}'.format(scale),
+        '{}'.format(median[0]), '{}'.format(median[1]),
+        mesh_file)
 
 if __name__ == "__main__":
     main()

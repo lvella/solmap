@@ -9,7 +9,7 @@ static const uint32_t frame_size = 2048;
 struct GlobalInputData
 {
 	Quat orientation;
-	Vec3 suns_direction;
+	Vec3 sun_direction;
 };
 
 template <typename T1, typename T2>
@@ -388,18 +388,18 @@ void TaskSlot::fill_command_buffer(const ShadowProcessor& sp,
 	chk_vk(vkEndCommandBuffer(cmd_bufs[0]));
 }
 
-void TaskSlot::compute_frame(const Vec3& direction)
+void TaskSlot::compute_frame(const Vec3& sun_direction)
 {
 	// Get pointer to device memory:
 	auto params = global_map.get<GlobalInputData*>();
 
-	// The rotation from model space sun to (0, 0, -1),
+	// The rotation from sun's direction in model space to (0, 0, -1),
 	// which is pointing to the viewer in Vulkan coordinates.
 	params->orientation = rot_from_unit_a_to_unit_b(
-		direction, Vec3{0.0, 0.0, -1.0});
+		sun_direction, Vec3{0.0, 0.0, -1.0});
 
 	// Set sun's direction:
-	params->suns_direction = direction;
+	params->sun_direction = sun_direction;
 
 	// Flush the copy.
 	global_map.flush();

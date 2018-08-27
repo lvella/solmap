@@ -38,7 +38,7 @@ Vec3 to_vec(AngularPosition pos,
 }
 
 
-void
+static void
 calculate_yearly_incidence(real latitude, real longitude, real altitude,
 	const Vec3& unit_north, const Vec3& unit_up, const Vec3& unit_east,
 	std::vector<std::unique_ptr<ShadowProcessor>> &processors
@@ -224,6 +224,7 @@ create_procs_from_devices(VkInstance vk,
 			"suitable Vulkan devices!\n";
 		exit(1);
 	}
+	std::cout.flush();
 
 	return processors;
 }
@@ -252,7 +253,7 @@ UVkInstance initialize_vulkan()
 	return vk;
 }
 
-void dump_vtk(const char* fname, const Mesh& mesh, double *result)
+void dump_vtk(const char* fname, const Mesh& mesh, real scale, double *result)
 {
 	std::ofstream fd(fname);
 
@@ -263,9 +264,8 @@ void dump_vtk(const char* fname, const Mesh& mesh, double *result)
 		"POINTS " << mesh.vertices.size() << " float\n";
 
 	for(auto& p: mesh.vertices) {
-		fd << p.position.x << ' '
-			<< p.position.y << ' '
-			<< p.position.z << '\n';
+		Vec3 pos = scale * p.position;
+		fd << pos.x << ' ' << pos.y << ' ' << pos.z << '\n';
 	}
 
 	uint32_t face_count = mesh.indices.size() / 3;
@@ -341,17 +341,15 @@ static Quat parse_quat(const char* opt, const char* cmd)
 	}
 
 	Quat ret;
-	for(uint8_t i = 0; i < 4; ++i) {
-		ret[i] = parse_real(match[i+1].str().c_str(), cmd);
+	ret.w = parse_real(match[1].str().c_str(), cmd);
+	for(uint8_t i = 0; i < 3; ++i) {
+		ret[i] = parse_real(match[2+i].str().c_str(), cmd);
 	};
 
-	// I am not sure ret.w == ret[0]...
-	assert(&ret.x == &ret[0]);
-
-	return ret;
+	return glm::normalize(ret);
 }
 
-static void parse_args(int argc, char *argv[], glm::quat& rotation, real& scale,
+static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 	real& lat, real& lon, std::string& mesh_name)
 {
 	const static struct option long_options[] =
@@ -411,7 +409,7 @@ int main(int argc, char *argv[])
 	UVkInstance vk = initialize_vulkan();
 
 	std::vector<std::unique_ptr<ShadowProcessor>> ps;
-	Mesh test_mesh = load_scene(mesh_name, scale);
+	Mesh test_mesh = load_scene(mesh_name, rotation, scale);
 	{
 		auto shadow_mesh = test_mesh;
 		//refine(test_mesh, 0.05);
@@ -442,7 +440,7 @@ int main(int argc, char *argv[])
 	for(double &r: result) {
 		r *= icount;
 	}
-	dump_vtk("incidence.vtk", test_mesh, result.data());
+	dump_vtk("incidence.vtk", test_mesh, scale, result.data());
 
 	std::cout << "\nTotal positions considered: " << count
 		<< "\n\nWorkload distribution:\n";

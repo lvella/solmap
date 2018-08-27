@@ -42,7 +42,7 @@ public:
 	void fill_command_buffer(const ShadowProcessor& sp,
 		const MeshBuffers &mesh);
 
-	void compute_frame(const Vec3& suns_direction);
+	void compute_frame(const Vec3& sun_direction);
 
 	VkFence get_fence()
 	{

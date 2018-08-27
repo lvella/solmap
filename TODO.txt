@@ -1,12 +1,9 @@
+ - Bug: refinement seems to turn vertices coordinates into NaNs.
+
  - Bug: artifacts when there are too many testing points.
     - Culprit is Intel GPU, investigate how to fix.
 
- - Use bounding sphere to normalize loaded points.
-
  - Handle python errors properly.
-
- - Create QueueFamilyManager between ShadowProcessor and TaskSlot to manage per
-   queue family stuff (constant buffers, command pools, etc).
 
  - Use better time discretization.
     - Work with variable time steps.
@@ -23,6 +20,8 @@
  - Add option to specify which GPUs to use.
 
  - Add option to specify north and up vectors, instead of quaternion.
+
+ - Add option to specify output file.
 
  - Accumulate results for the same device in a compute shader:
     - Profile to see if this is worthwhile.
