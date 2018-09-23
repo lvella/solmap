@@ -8,37 +8,10 @@
 #include <assimp/postprocess.h>
 #include <assimp/Importer.hpp>
 
-#include <CGAL/Min_sphere_of_spheres_d.h>
-#include <CGAL/Cartesian_d.h>
-
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
 
 #include "mesh_tools.hpp"
-
-// Find the bounding sphere to all points.
-static real bounding_sphere(const Mesh& m, Vec3& center)
-{
-	using K = CGAL::Cartesian_d<real>;
-	using Traits = CGAL::Min_sphere_of_spheres_d_traits_d<K,real,3>;
-	CGAL::Min_sphere_of_spheres_d<Traits> min_sphere;
-
-	for(const auto& v: m.vertices) {
-		min_sphere.insert(Traits::Sphere{
-			K::Point_d(
-				v.position.x,
-				v.position.y,
-				v.position.z
-			), 0.0f
-		});
-	}
-	std::copy(
-		min_sphere.center_cartesian_begin(),
-		min_sphere.center_cartesian_end(),
-		&center[0]
-	);
-	return min_sphere.radius();
-}
 
 // Finding the axis aligned bounding box.
 static real bounding_box(const Mesh& m, Vec3& center)
@@ -163,11 +136,8 @@ Mesh load_scene(const std::string& filename, const Quat& rotation, real &scale)
 
 	// Find the bounding sphere of the point set:
 	Vec3 center;
-	// TODO: THIS IS BUGGY:
-	/*const real radius = bounding_sphere(ret, center);*/
 
-	// Temporary fix while I don't know why bounding
-	// sphere algorithm doesn't work: use the bounding cube:
+	// Find the bounding box to scale to the rendering buffer.
 	const real radius = bounding_box(ret, center);
 
 	// Transform mesh. Scale so radius is 1, thus it
