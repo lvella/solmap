@@ -302,6 +302,11 @@ void usage(const char *cmd)
 		"    -s --scale=<scalar>\n"
 		"\tScale applied to the 3-D model (default: 1.0).\n"
 		"\n"
+		"    -f --fine-pass-filter=<cutoff>\n"
+		"\tRemove triangles larger than cutoff from 3-D model.\n"
+		"\tCutoff must be between 0 and 1, where 0 is the smallest\n"
+		"mesh element and 1 is the biggest.\n"
+		"\n"
 		"Parameters:\n"
 		"    latitude\n"
 		"\tLatitde, given as degrees in decimal notation,\n"
@@ -350,21 +355,23 @@ static Quat parse_quat(const char* opt, const char* cmd)
 }
 
 static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
-	real& lat, real& lon, std::string& mesh_name)
+	real& lat, real& lon, std::string& mesh_name, real &filter_cutoff)
 {
 	const static struct option long_options[] =
 	{
 		{"rotation-quaternion", required_argument, nullptr, 'q'},
 		{"scale",               required_argument, nullptr, 's'},
+		{"fine-pass-filter",	required_argument, nullptr, 'f'},
 		{nullptr, 0, nullptr, 0}
 	};
 
 	rotation = Quat(1.0, 0.0, 0.0, 0.0);
 	scale = 1.0;
+	filter_cutoff = 1.0;
 
 	opterr = 0;
 	for(;;) {
-		int opt = getopt_long (argc, argv, "q:s:",
+		int opt = getopt_long (argc, argv, "q:s:f:",
 			long_options, nullptr);
 
 		if(opt == -1) {
@@ -378,6 +385,9 @@ static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 		case 's':
 			scale = parse_real(optarg, argv[0]);
 			break;
+		case 'f':
+			filter_cutoff = parse_real(optarg, argv[0]);
+			break;
 		default:
 			goto out;
 		}
@@ -387,6 +397,11 @@ static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 	if(argc - optind < 3)
 	{
 		std::cout << "Error: Missing arguments." << std::endl;
+		usage(argv[0]);
+	}
+
+	if(filter_cutoff < 0.0 || filter_cutoff > 1.0) {
+		std::cout << "Error: Fine pass filter factor must be between 0 and 1." << std::endl;
 		usage(argv[0]);
 	}
 
@@ -403,13 +418,15 @@ int main(int argc, char *argv[])
 	std::string mesh_name;
 	Quat rotation;
 	real scale;
+	real filter_cutoff;
 
-	parse_args(argc, argv, rotation, scale, lat, lon, mesh_name);
+	parse_args(argc, argv, rotation, scale, lat, lon, mesh_name, filter_cutoff);
+	std::cout << "### " << filter_cutoff << '\n';
 
 	UVkInstance vk = initialize_vulkan();
 
 	std::vector<std::unique_ptr<ShadowProcessor>> ps;
-	Mesh test_mesh = load_scene(mesh_name, rotation, scale);
+	Mesh test_mesh = load_scene(mesh_name, rotation, scale, filter_cutoff);
 	{
 		auto shadow_mesh = test_mesh;
 		//refine(test_mesh, 0.05);

@@ -11,6 +11,8 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
 
+#include <iostream>
+
 #include "mesh_tools.hpp"
 
 // Finding the axis aligned bounding box.
@@ -88,7 +90,7 @@ static Mesh import_scene_from_file(const std::string& filename)
 	// buffer, to simplify the rendering and computation.
 	const aiScene* scene = importer.GetScene();
 
-	// Count before allocating and copying
+	// Count before allocating and copying.
 	size_t vert_count = 0;
 	size_t idx_count = 0;
 	for(size_t i = 0; i < scene->mNumMeshes; ++i) {
@@ -130,9 +132,92 @@ static Mesh import_scene_from_file(const std::string& filename)
 	return ret;
 }
 
-Mesh load_scene(const std::string& filename, const Quat& rotation, real &scale)
+static real parallelogram_sq_area(Vec3& a, Vec3 b, Vec3 c)
+{
+	return glm::length2(glm::cross(b - a, c - a));
+}
+
+static void fine_pass_filter(Mesh &m, float filter_cutoff)
+{
+	if(m.indices.empty()) {
+		return;
+	}
+
+	// Find the largest and the smallest (2*area)²
+	// of the triangular elements.
+	float largest = parallelogram_sq_area(
+		m.vertices[m.indices[0]].position,
+		m.vertices[m.indices[1]].position,
+		m.vertices[m.indices[2]].position
+	);
+	float smallest = largest;
+
+	std::vector<float> areas(m.indices.size()/3);
+	areas[0] = largest;
+
+	for(size_t j = 1; j < areas.size(); ++j) {
+		size_t idx = j * 3;
+		float sq_2_area = parallelogram_sq_area(
+			m.vertices[m.indices[idx]].position,
+			m.vertices[m.indices[idx+1]].position,
+			m.vertices[m.indices[idx+2]].position
+		);
+
+		if(sq_2_area > largest) {
+			largest = sq_2_area;
+		} else if(sq_2_area < smallest) {
+			smallest = sq_2_area;
+		}
+
+		areas[j/3] = sq_2_area;
+	}
+
+	// Find filter cutoff limit as squared parallelogram area:
+	largest = std::sqrt(largest);
+	smallest = std::sqrt(smallest);
+	float limit = smallest + filter_cutoff * (largest - smallest);
+
+	std::cout << "### " << largest << ' ' << smallest << ' ' << limit <<  '\n';
+	limit = limit * limit;
+
+	// Copy faces whose (2*area)² is below the cutoff
+	// (and the corresponding vertices):
+	std::vector<uint32_t> new_indices;
+	std::vector<VertexData> new_vertices;
+	std::unordered_map<uint32_t, uint32_t> old_to_new;
+
+	for(size_t i = 0; i < areas.size(); ++i) {
+		if(areas[i] < limit) {
+			for(size_t j = 0; j < 3; ++j) {
+				uint32_t idx = m.indices[i * 3 + j];
+				auto r = old_to_new.emplace(
+					idx, new_vertices.size()
+				);
+				if(r.second) {
+					new_vertices.push_back(m.vertices[idx]);
+				}
+				new_indices.push_back(r.first->second);
+			}
+		}
+	}
+
+	// Use the newly created mesh.
+	m.indices = std::move(new_indices);
+	m.vertices = std::move(new_vertices);
+
+	m.indices.shrink_to_fit();
+	m.vertices.shrink_to_fit();
+}
+
+Mesh load_scene(const std::string& filename, const Quat& rotation,
+	real &scale, real filter_cutoff)
 {
 	Mesh ret = import_scene_from_file(filename);
+
+	// Filter out too big triangles.
+	if(filter_cutoff < 1.0) {
+		fine_pass_filter(ret, filter_cutoff);
+	}
 
 	// Find the bounding sphere of the point set:
 	Vec3 center;

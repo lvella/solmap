@@ -24,6 +24,7 @@ struct Mesh
 	std::vector<uint32_t> indices;
 };
 
-Mesh load_scene(const std::string& filename, const Quat& rotation, real& scale);
+Mesh load_scene(const std::string& filename, const Quat& rotation,
+	real& scale, real filter_cutoff);
 
 void refine(Mesh& m, float max_length);
