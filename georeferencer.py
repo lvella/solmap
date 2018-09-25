@@ -247,7 +247,7 @@ def main():
     os.execl(executable, executable,
         '--rotation-quaternion={}:{}:{}:{}'.format(*quat),
         '--scale={}'.format(scale),
-        '--fine-pass-filter=0.25',
+        '--fine-pass-filter=0.005',
         '{}'.format(median[0]), '{}'.format(median[1]),
         mesh_file)
 

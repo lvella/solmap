@@ -132,7 +132,7 @@ static Mesh import_scene_from_file(const std::string& filename)
 	return ret;
 }
 
-static real parallelogram_sq_area(Vec3& a, Vec3 b, Vec3 c)
+static real parallelogram_sq_area(Vec3& a, Vec3& b, Vec3& c)
 {
 	return glm::length2(glm::cross(b - a, c - a));
 }
@@ -169,7 +169,7 @@ static void fine_pass_filter(Mesh &m, float filter_cutoff)
 			smallest = sq_2_area;
 		}
 
-		areas[j/3] = sq_2_area;
+		areas[j] = sq_2_area;
 	}
 
 	// Find filter cutoff limit as squared parallelogram area:
@@ -177,7 +177,6 @@ static void fine_pass_filter(Mesh &m, float filter_cutoff)
 	smallest = std::sqrt(smallest);
 	float limit = smallest + filter_cutoff * (largest - smallest);
 
-	std::cout << "### " << largest << ' ' << smallest << ' ' << limit <<  '\n';
 	limit = limit * limit;
 
 	// Copy faces whose (2*area)² is below the cutoff
@@ -185,6 +184,8 @@ static void fine_pass_filter(Mesh &m, float filter_cutoff)
 	std::vector<uint32_t> new_indices;
 	std::vector<VertexData> new_vertices;
 	std::unordered_map<uint32_t, uint32_t> old_to_new;
+
+	size_t removed_count = 0;
 
 	for(size_t i = 0; i < areas.size(); ++i) {
 		if(areas[i] < limit) {
@@ -198,8 +199,14 @@ static void fine_pass_filter(Mesh &m, float filter_cutoff)
 				}
 				new_indices.push_back(r.first->second);
 			}
+		} else {
+			removed_count++;
 		}
 	}
+
+	std::cout << "Removed count: " << removed_count << '/' << (m.indices.size()/3)
+		<< " (" << float(removed_count) * 100.0 / float(m.indices.size()/3)
+		<< " %)" << std::endl;
 
 	// Use the newly created mesh.
 	m.indices = std::move(new_indices);

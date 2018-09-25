@@ -421,7 +421,6 @@ int main(int argc, char *argv[])
 	real filter_cutoff;
 
 	parse_args(argc, argv, rotation, scale, lat, lon, mesh_name, filter_cutoff);
-	std::cout << "### " << filter_cutoff << '\n';
 
 	UVkInstance vk = initialize_vulkan();
 
