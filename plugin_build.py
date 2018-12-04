@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import cffi
 ffibuilder = cffi.FFI()
 
@@ -10,39 +11,15 @@ ffibuilder.set_source("sun_position", r'''
     #include "sun_position.h"
 ''')
 
+script_dir = os.path.dirname(os.path.realpath(__file__))
+
 ffibuilder.embedding_init_code("""
     from sun_position import ffi
 
-    import ephem
-    import datetime
+    import sys
+    sys.path.append('{}/resources/pylib')
 
-    def position_over_year(latitude, longitude, elevation):
-        '''
-        Yields the position (azimuth, altitude) of the sun over the year
-        of 2017, for every 5 minutes of daylight.
-
-        Result is a tuple.
-        '''
-
-        obs = ephem.Observer()
-        obs.lat = str(latitude)
-        obs.lon = str(longitude)
-        obs.elevation = elevation
-
-        dt = datetime.timedelta(minutes=5)
-
-        t = datetime.datetime(2017, 1, 1, 0, 0, 0)
-
-        final = datetime.datetime(2018, 1, 1, 0, 0, 0)
-
-        while(t <= final):
-            obs.date = t.strftime('%Y/%m/%d %H:%M:%S')
-            v = ephem.Sun(obs)
-
-            if v.alt > 0.0:
-                yield (v.az, v.alt)
-
-            t += dt
+    from suntracking import position_over_year
 
     alive_year_angles = set()
 
@@ -64,6 +41,6 @@ ffibuilder.embedding_init_code("""
             return True
         except StopIteration:
             return False
-""")
+""".format(script_dir))
 
 ffibuilder.emit_c_code("build/sun_position.c")

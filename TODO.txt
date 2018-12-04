@@ -1,4 +1,4 @@
- - Bug: refinement seems to turn vertices coordinates into NaNs.
+ - Make resources directory location configurable during build.
 
  - Bug: artifacts when there are too many testing points.
     - Culprit is Intel GPU, investigate how to fix.
