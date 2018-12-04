@@ -305,7 +305,7 @@ void usage(const char *cmd)
 		"    -f --fine-pass-filter=<cutoff>\n"
 		"\tRemove triangles larger than cutoff from 3-D model.\n"
 		"\tCutoff must be between 0 and 1, where 0 is the smallest\n"
-		"mesh element and 1 is the biggest.\n"
+		"\tmesh element and 1 is the biggest.\n"
 		"\n"
 		"Parameters:\n"
 		"    latitude\n"
