@@ -8,10 +8,10 @@ import dbm
 import struct
 import array
 import datetime
+import math
 
 import daytimes
 import ephem
-import numpy as np
 
 dbm_file = os.path.dirname(os.path.realpath(__file__)) + '/../../build/ABES.dbm'
 
@@ -20,8 +20,8 @@ dbm_file = os.path.dirname(os.path.realpath(__file__)) + '/../../build/ABES.dbm'
 # in new coordinate space is used as key entries in the hash indexed
 # database.
 def coords2key(latitude, longitude):
-    latitude = 10.0 * latitude - 0.995
-    longitude = 10.0 * longitude - 0.49
+    latitude = 10.0 * (latitude - 0.0995)
+    longitude = 10.0 * (longitude - 0.051)
     return (latitude, longitude)
 
 # Interface to DBM database handling the data encoding.
@@ -68,7 +68,7 @@ def get_montly_irradiation(latitude, longitude):
 def energy2power(date, days, mean_energy):
     assert(len(days) == 4*365+1)
 
-    A = np.zeros([12,12])
+    monthly_daytime = array.array('d', [0.0] * 12)
 
     month = []
     for day in days:
@@ -77,29 +77,17 @@ def energy2power(date, days, mean_energy):
         tomorrow = date + datetime.timedelta(days=1)
         if tomorrow.month != date.month:
             m = date.month - 1
-            Ms = month[0][0]
-            tm = (month[-1][1] - Ms).total_seconds()
 
-            Pc = 0.0
-            Pn = 0.0
+            total_daytime = 0.0
 
             for day in month:
                 daylight = day[2]
-                if not daylight:
-                    continue
+                # All days must have daylight in this database:
+                assert(daylight)
 
-                Ds = (daylight[0] - Ms).total_seconds()
-                De = (daylight[1] - Ms).total_seconds()
-                dif = De - Ds
-                add = Ds + De
+                total_daytime += (daylight[1] - daylight[0]).total_seconds()
 
-                Pc += dif * (2.0 - add / tm)
-                Pn += dif * add / tm
-
-            factor = 0.5 / len(month)
-
-            A[m,m] += factor * Pc
-            A[m,(m+1)%12] += factor * Pn
+            monthly_daytime[m] += total_daytime / len(month)
 
             month = []
 
@@ -107,11 +95,14 @@ def energy2power(date, days, mean_energy):
 
     assert(date == datetime.date(2021, 1, 1))
 
-    # Since this is a Brazilian database, there is no need to check
-    # for zeroed rows (3 months in a row without daylight).
+    # Since this is a Brazilian database, there is no need to
+    # check for zeroed monthly daytime.
 
-    # 4 years times energy converted to joule (times 3600).
-    mean_power = np.linalg.solve(A, 4.0 * 3600.0 * np.array(mean_energy, dtype=float))
+    # Convert energy to power.
+    # Convert Wh to joule and multiply to the number of years simulated:
+    print("mean_energy", mean_energy)
+    print("monthly_daytime", monthly_daytime)
+    mean_power = array.array('d', ((e * 3600.0 * 4.0) / dt for e, dt in zip(mean_energy, monthly_daytime)))
     return mean_power
 
 month_keys = [
@@ -132,6 +123,7 @@ month_keys = [
 def extract_row_data(record):
     float_key = coords2key(record['LAT'], record['LON'])
     key = tuple(map(round, float_key))
+    assert(all((math.fabs(k - fk) < 1e-6 for k, fk in zip(key, float_key))))
 
     mean_energy = [record[month] for month in month_keys]
     return (key, mean_energy)
@@ -144,7 +136,9 @@ def create_indexed_database(direct_normal_dbf, diffuse_dbf):
     dirnorm = dict(map(extract_row_data, DBF(direct_normal_dbf)))
     diffuse = dict(map(extract_row_data, DBF(diffuse_dbf)))
 
-    for key in dirnorm:
+    assert(len(dirnorm) == len(diffuse))
+
+    for i, key in enumerate(dirnorm):
         obs = ephem.Observer()
         obs.lat = str(key[0])
         obs.lon = str(key[1])
@@ -162,6 +156,7 @@ def create_indexed_database(direct_normal_dbf, diffuse_dbf):
 
         storage[key] = (pdir, pdif)
 
+        print(i+1, '/', len(dirnorm))
         print(key)
         print(pdir)
         print(pdif)
