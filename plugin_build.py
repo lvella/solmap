@@ -19,13 +19,13 @@ ffibuilder.embedding_init_code("""
     import sys
     sys.path.append('{}/resources/pylib')
 
-    from suntracking import position_over_year
+    from daytimes import quantize_year
 
     alive_year_angles = set()
 
     @ffi.def_extern()
     def create_pos_over_year(*args, **kwargs):
-        iter = ffi.new_handle(position_over_year(*args, **kwargs))
+        iter = ffi.new_handle(quantize_year(*args, **kwargs))
         alive_year_angles.add(iter)
 
         return iter
@@ -37,7 +37,7 @@ ffibuilder.embedding_init_code("""
     @ffi.def_extern()
     def next_pos_over_year(iter, ret):
         try:
-            ret.az, ret.alt = next(ffi.from_handle(iter))
+            ret.coefficient, ret.pos.az, ret.pos.alt, ret.direct_power, ret.indirect_power = next(ffi.from_handle(iter))
             return True
         except StopIteration:
             return False

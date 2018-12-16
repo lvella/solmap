@@ -130,11 +130,14 @@ def daytimes_over_range_at(obs, ref_start=datetime.datetime(2017, 1, 1, 0, 0, 0,
 
     return daytimes_over_range(altitude_func, float(obs.lon), ref_start, num_days)
 
-def quantize_year(latitude, longitude, max_dt):
+def quantize_year(latitude, longitude, elevation, max_dt):
     obs = ephem.Observer()
     obs.lat = str(latitude)
     obs.lon = str(longitude)
-    obs.elevation = 0
+    obs.elevation = elevation
+
+    direct_power = 1000.0
+    indirect_power = 0.0
 
     for start, finish, daytime in daytimes_over_range_at(obs):
         if not daytime:
@@ -149,7 +152,7 @@ def quantize_year(latitude, longitude, max_dt):
         az, alt = sun_pos(obs, daytime[0])
 
         # Coefficient for the first term of trapezoidal rule: dt/2
-        yield (dt*0.5, az, alt)
+        yield (dt*0.5, az, alt, direct_power, indirect_power)
 
         # Middle terms for trapezoidal rule:
         for i in range(1, n):
@@ -157,11 +160,11 @@ def quantize_year(latitude, longitude, max_dt):
                 obs,
                 daytime[0] + datetime.timedelta(seconds=i*dt)
             )
-            yield (dt, az, alt)
+            yield (dt, az, alt, direct_power, indirect_power)
 
         # Last term for trapezoidal rule (it uses n+1 points for n chunks):
         az, alt = sun_pos(obs, daytime[1])
-        yield (dt*0.5, az, alt)
+        yield (dt*0.5, az, alt, direct_power, indirect_power)
 
 if __name__ == '__main__':
     import sys

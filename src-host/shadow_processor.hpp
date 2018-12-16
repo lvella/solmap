@@ -42,7 +42,7 @@ public:
 	void fill_command_buffer(const ShadowProcessor& sp,
 		const MeshBuffers &mesh);
 
-	void compute_frame(const Vec3& sun_direction);
+	void compute_frame(const Vec3& sun_direction, const InstantaneousData& instant);
 
 	VkFence get_fence()
 	{
@@ -124,11 +124,21 @@ public:
 		return device_name;
 	}
 
-	void process(const Vec3& suns_direction);
+	void process(const Vec3& suns_direction, const InstantaneousData& instant);
 
-	const Vec3& get_sum() const
+	const Vec3& get_directional_sum() const
 	{
-		return sum;
+		return directional_sum;
+	}
+
+	double get_diffuse_sum() const
+	{
+		return diffuse_sum;
+	}
+
+	double get_time_sum() const
+	{
+		return time_sum;
 	}
 
 	size_t get_process_count() const
@@ -190,7 +200,9 @@ private:
 	std::queue<uint32_t> available_slots;
 	std::vector<VkFence> fence_set;
 
-	Vec3 sum = {0,0,0};
+	Vec3 directional_sum = {0,0,0};
+	double diffuse_sum = 0.0;
+	double time_sum = 0.0;
 	size_t count = 0;
 };
 

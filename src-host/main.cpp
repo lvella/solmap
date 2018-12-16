@@ -49,7 +49,7 @@ calculate_yearly_incidence(real latitude, real longitude, real altitude,
 
 	// Each generated position will be inserted into the queue
 	// and signaled on the semaphore.
-	moodycamel::ConcurrentQueue<AngularPosition> queue;
+	moodycamel::ConcurrentQueue<InstantaneousData> queue;
 	Semaphore sem;
 
 	// These jobs will wait on the semaphore and consume
@@ -64,28 +64,28 @@ calculate_yearly_incidence(real latitude, real longitude, real altitude,
 	// Jobs that will consume from the queue:
 	for(auto &p: processors) {
 		jobs.push_back(std::thread([&]() {
-			AngularPosition pos;
+			InstantaneousData val;
 
 			for(;;) {
 				sem.wait();
 
-				if(!queue.try_dequeue_from_producer(t, pos)) {
+				if(!queue.try_dequeue_from_producer(t, val)) {
 					break;
 				}
 
 				// Transforms the angular position into a unit
 				// vector pointing to the sun.
-				const Vec3 suns_direction = to_vec(pos,
+				const Vec3 suns_direction = to_vec(val.pos,
 					unit_north, unit_up, unit_east);
-				p->process(suns_direction);
+				p->process(suns_direction, val);
 			}
 		}));
 	}
 
 	// Produce the positions and notify the processors.
-	AngularPosition pos;
-	while(ss.next(pos)) {
-		queue.enqueue(t, pos);
+	InstantaneousData val;
+	while(ss.next(val)) {
+		queue.enqueue(t, val);
 		sem.signal();
 	}
 
@@ -443,44 +443,52 @@ int main(int argc, char *argv[])
 
 	// Get results:
 	std::vector<double> result(test_mesh.vertices.size(), 0.0f);
-	Vec3 total{0.0, 0.0, 0.0};
+	Vec3 dir_total{0.0, 0.0, 0.0};
+	double dif_total = 0.0;
+	double suntime = 0.0;
+
 	size_t count = 0;
 	for(auto &p: ps) {
-		total += p->get_sum();
+		dir_total += p->get_directional_sum();
+		dif_total += p->get_diffuse_sum();
+		suntime += p->get_time_sum();
+
 		count += p->get_process_count();
 		p->accumulate_result(result.data());
 	}
+	const float icount = 1.0f / count;
 
-	// Divide result by the total number of executions:
-	double icount = 1.0 / count;
+	// Convert from j/m² to KWh/m²
 	for(double &r: result) {
-		r *= icount;
+		r = r / 3600.0 / 1000.0;
 	}
 	dump_vtk("incidence.vtk", test_mesh, scale, result.data());
 
-	std::cout << "\nTotal positions considered: " << count
-		<< "\n\nWorkload distribution:\n";
+	std::cout << "Workload distribution:\n";
 	for(size_t i = 0; i < ps.size(); ++i) {
 		const size_t lc =  ps[i]->get_process_count();
 		std::cout << " - Device " << i << ": " << lc
-			<< '/' << count << " (" << lc * icount * 100.0
+			<< '/' << count << " (" << lc * icount * 100.0f
 			<< "%)\n";
 	}
 
-	Vec3 best_dir = glm::normalize(total);
+	Vec3 best_dir = glm::normalize(dir_total);
 
 	real best_alt = std::acos(best_dir.y);
 
 	// Project total to the surface plane, to calculate azimuth:
-	Vec3 plane_dir{total.x, 0.0, total.z};
+	Vec3 plane_dir{dir_total.x, 0.0, dir_total.z};
 	real best_az = std::acos(glm::dot(Vec3{0, 0, -1}, plane_dir)
 		/ glm::length(plane_dir));
 
-	std::cout << "\nBest placement for latitude "
+	std::cout << "\nReport:\n"
+		" - Total daytime over year: " << suntime / 3600.0 << " hours\n"
+		" - Best placement for latitude "
 		<< lat << " and longitude " << lon
 		<< " is:\n"
-		"Altitude: " << to_deg(best_alt) << "°\n"
-		"Azimuth: " << to_deg(best_az) << "°\n\n"
-		"At that position, the mean daytime power over a year is:\n"
-		<< 1000.0 * glm::dot(total, best_dir) * icount << " watts/m²\n";
+		"    - Altitude: " << to_deg(best_alt) << "°\n"
+		"    - Azimuth: " << to_deg(best_az) << "°\n"
+		" - Total daytime over year: " << suntime / 3600.0 << " hours\n"
+		" - At that position, the mean daytime power over a year is: "
+		<< (dot(dir_total, best_dir) + dif_total) / suntime << " watts/m²\n";
 }

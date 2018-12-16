@@ -9,6 +9,7 @@ static const uint32_t frame_size = 2048;
 struct GlobalInputData
 {
 	Quat orientation;
+	Vec4 data;
 	Vec3 sun_direction;
 };
 
@@ -388,7 +389,7 @@ void TaskSlot::fill_command_buffer(const ShadowProcessor& sp,
 	chk_vk(vkEndCommandBuffer(cmd_bufs[0]));
 }
 
-void TaskSlot::compute_frame(const Vec3& sun_direction)
+void TaskSlot::compute_frame(const Vec3& sun_direction, const InstantaneousData& instant)
 {
 	// Get pointer to device memory:
 	auto params = global_map.get<GlobalInputData*>();
@@ -400,6 +401,13 @@ void TaskSlot::compute_frame(const Vec3& sun_direction)
 
 	// Set sun's direction:
 	params->sun_direction = sun_direction;
+
+	// Sets incidence power:
+	params->data.x = instant.direct_power;
+	params->data.y = instant.indirect_power;
+
+	// Sets integration coefficient:
+	params->data.w = instant.coefficient;
 
 	// Flush the copy.
 	global_map.flush();
@@ -954,9 +962,12 @@ void ShadowProcessor::create_compute_pipeline()
 	}, d.get(), nullptr, 1};
 }
 
-void ShadowProcessor::process(const Vec3& sun)
+void ShadowProcessor::process(const Vec3& sun, const InstantaneousData& instant)
 {
-	sum += sun;
+	directional_sum += float(instant.coefficient * instant.direct_power) * sun;
+	diffuse_sum += instant.coefficient + instant.indirect_power;
+	// For some reason, the sum of integration coefficients adds to total time:
+	time_sum += instant.coefficient;
 	++count;
 
 	if(available_slots.empty()) {
@@ -985,7 +996,7 @@ void ShadowProcessor::process(const Vec3& sun)
 
 	// Send the processing to that slot.
 	vkResetFences(d.get(), 1, &fence_set[task_idx]);
-	task_pool[task_idx].compute_frame(sun);
+	task_pool[task_idx].compute_frame(sun, instant);
 }
 
 void ShadowProcessor::accumulate_result(double *accum)

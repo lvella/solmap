@@ -8,9 +8,9 @@ extern "C" {
 class SunSequence
 {
 public:
-	SunSequence(real latitude, real longitude, real elevation=0)
+	SunSequence(real latitude, real longitude, real elevation=0, real max_dt=300)
 	{
-		poy = create_pos_over_year(latitude, longitude, elevation);
+		poy = create_pos_over_year(latitude, longitude, elevation, max_dt);
 	}
 
 	~SunSequence()
@@ -18,7 +18,7 @@ public:
 		destroy_pos_over_year(poy);
 	}
 
-	bool next(AngularPosition &val)
+	bool next(InstantaneousData &val)
 	{
 		return next_pos_over_year(poy, &val);
 	}

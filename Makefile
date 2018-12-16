@@ -52,7 +52,7 @@ ${BDIR}/solmap: ${INC_SHADERS} ${OBJS}
 ${BDIR}/%.o: ${SDIR}/%.cpp | ${BDIR}
 	${CXX} -c -MMD ${FLAGS} ${SDIR}/$*.cpp -o ${BDIR}/$*.o
 
-${BDIR}/sun_position.o: ${BDIR}/sun_position.c
+${BDIR}/sun_position.o: ${BDIR}/sun_position.c ${SDIR}/sun_position.h
 	${CC} -c `pkg-config python3 --cflags` -I${SDIR} ${FLAGS} ${BDIR}/sun_position.c -o ${BDIR}/sun_position.o
 
 ${BDIR}/sun_position.c: plugin_build.py | ${BDIR}
