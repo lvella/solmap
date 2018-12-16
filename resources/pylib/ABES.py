@@ -24,6 +24,12 @@ def coords2key(latitude, longitude):
     longitude = 10.0 * (longitude - 0.051)
     return (latitude, longitude)
 
+# Inverse operation:
+def key2coords(key):
+    latitude = (key[0] / 10.0) + 0.0995
+    longitude = (key[1] / 10.0) + 0.051
+    return latitude, longitude
+
 # Interface to DBM database handling the data encoding.
 class IndexedStorage:
     def __init__(self, filename, mode='r'):
@@ -123,7 +129,7 @@ month_keys = [
 def extract_row_data(record):
     float_key = coords2key(record['LAT'], record['LON'])
     key = tuple(map(round, float_key))
-    assert(all((math.fabs(k - fk) < 1e-6 for k, fk in zip(key, float_key))))
+    assert(all((math.fabs(k - fk) < 1e-8 for k, fk in zip(key, float_key))))
 
     mean_energy = [record[month] for month in month_keys]
     return (key, mean_energy)
@@ -139,9 +145,11 @@ def create_indexed_database(direct_normal_dbf, diffuse_dbf):
     assert(len(dirnorm) == len(diffuse))
 
     for i, key in enumerate(dirnorm):
+        coords = key2coords(key)
+
         obs = ephem.Observer()
-        obs.lat = str(key[0])
-        obs.lon = str(key[1])
+        obs.lat = str(coords[0])
+        obs.lon = str(coords[1])
         obs.elevation = 0
 
         start_date = datetime.date(2017, 1, 1)
@@ -157,7 +165,7 @@ def create_indexed_database(direct_normal_dbf, diffuse_dbf):
         storage[key] = (pdir, pdif)
 
         print(i+1, '/', len(dirnorm))
-        print(key)
+        print(coords)
         print(pdir)
         print(pdif)
         print('\n')
