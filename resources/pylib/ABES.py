@@ -134,8 +134,30 @@ def extract_row_data(record):
     mean_energy = [record[month] for month in month_keys]
     return (key, mean_energy)
 
+def convert_to_power(args):
+    key, dirn, diff = args
+    coords = key2coords(key)
+
+    obs = ephem.Observer()
+    obs.lat = str(coords[0])
+    obs.lon = str(coords[1])
+    obs.elevation = 0
+
+    start_date = datetime.date(2017, 1, 1)
+
+    days = list(daytimes.daytimes_over_range_at(obs,
+        datetime.datetime.combine(start_date, datetime.time()),
+        4*365+1
+    ))
+
+    pdir = energy2power(start_date, days, dirn)
+    pdif = energy2power(start_date, days, diff)
+
+    return key, pdir, pdif
+
 def create_indexed_database(direct_normal_dbf, diffuse_dbf):
     from dbfread import DBF
+    import multiprocessing.pool
 
     storage = IndexedStorage(dbm_file, 'n')
 
@@ -144,31 +166,20 @@ def create_indexed_database(direct_normal_dbf, diffuse_dbf):
 
     assert(len(dirnorm) == len(diffuse))
 
-    for i, key in enumerate(dirnorm):
-        coords = key2coords(key)
+    pool = multiprocessing.pool.Pool()
 
-        obs = ephem.Observer()
-        obs.lat = str(coords[0])
-        obs.lon = str(coords[1])
-        obs.elevation = 0
+    read_data = ((key, dirn, diffuse[key]) for key, dirn in dirnorm.items())
 
-        start_date = datetime.date(2017, 1, 1)
-
-        days = list(daytimes.daytimes_over_range_at(obs,
-            datetime.datetime.combine(start_date, datetime.time()),
-            4*365+1
-        ))
-
-        pdir = energy2power(start_date, days, dirnorm[key])
-        pdif = energy2power(start_date, days, diffuse[key])
-
+    i = 1
+    for key, pdir, pdif in pool.imap_unordered(convert_to_power, read_data):
         storage[key] = (pdir, pdif)
 
-        print(i+1, '/', len(dirnorm))
-        print(coords)
+        print(i, '/', len(dirnorm))
+        print(key, key2coords(key))
         print(pdir)
         print(pdif)
         print('\n')
+        i += 1
 
 if __name__ == '__main__':
     import sys
