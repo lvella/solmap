@@ -146,7 +146,7 @@ def create_indexed_database(direct_normal_dbf, diffuse_dbf):
 
         start_date = datetime.date(2017, 1, 1)
 
-        days = list(daytimes.daytimes_over_range(obs,
+        days = list(daytimes.daytimes_over_range_at(obs,
             datetime.datetime.combine(start_date, datetime.time()),
             4*365+1
         ))
