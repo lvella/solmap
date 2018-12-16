@@ -458,9 +458,10 @@ int main(int argc, char *argv[])
 	}
 	const float icount = 1.0f / count;
 
-	// Convert from j/m² to KWh/m²
+	// Convert from j/m² to kWh/m²
+	const double j2kwh = 1.0 / 3600.0 / 1000.0;
 	for(double &r: result) {
-		r = r / 3600.0 / 1000.0;
+		r *= j2kwh;
 	}
 	dump_vtk("incidence.vtk", test_mesh, scale, result.data());
 
@@ -488,7 +489,6 @@ int main(int argc, char *argv[])
 		<< " is:\n"
 		"    - Altitude: " << to_deg(best_alt) << "°\n"
 		"    - Azimuth: " << to_deg(best_az) << "°\n"
-		" - Total daytime over year: " << suntime / 3600.0 << " hours\n"
-		" - At that position, the mean daytime power over a year is: "
-		<< (dot(dir_total, best_dir) + dif_total) / suntime << " watts/m²\n";
+		" - At this orientation, the total incident energy over a year is: "
+		<< (dot(dir_total, best_dir) + dif_total) * j2kwh << " kWh/m²\n";
 }
