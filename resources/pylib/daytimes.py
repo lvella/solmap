@@ -8,6 +8,9 @@ import math
 # Inverse golden ratio
 phi = 2.0 / (1.0 + 5.0**0.5)
 
+# Reference start date
+ref_start = datetime.datetime(2017, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+
 # Golden section method, straight from Wikipedia page:
 def int_minimize(fun, lo, hi):
     a = (lo, fun(lo))
@@ -53,6 +56,17 @@ def int_root_find(fn, lo, hi):
         return lo
     return hi
 
+def get_solar_database(latitude, longitude):
+    # TODO: generalize to support multiple databases
+    import ABES2017
+
+    data = ABES2017.get_montly_incidence(latitude, longitude)
+    def get_incidence(date):
+        nonlocal data
+        return data[date.month - 1]
+
+    return get_incidence
+
 def daytimes_over_range(altitude_func, longitude, ref_start, num_days):
     # Timezone is used to identify which calendar day and
     # month is identified by the solar database, given
@@ -61,7 +75,7 @@ def daytimes_over_range(altitude_func, longitude, ref_start, num_days):
     timezone = longitude / 15.0
 
     # We start from a reference date we know to be near the
-    # lowest sun position on 2017-01-01 at the given position.
+    # lowest sun position at the given day.
     lowest = ref_start + datetime.timedelta(hours=timezone)
 
     # Find the time of lowest sun position for the date:
@@ -122,7 +136,7 @@ def sun_pos(obs, time):
 
     return v.az, v.alt
 
-def daytimes_over_range_at(obs, ref_start=datetime.datetime(2017, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc), num_days=365):
+def daytimes_over_range_at(obs, ref_start=ref_start, num_days=365):
     def altitude_func(ref, x):
         nonlocal obs
         time = ref + datetime.timedelta(seconds=x)
@@ -136,12 +150,16 @@ def quantize_year(latitude, longitude, elevation, max_dt):
     obs.lon = str(longitude)
     obs.elevation = elevation
 
-    direct_power = 1000.0
-    indirect_power = 0.0
+    incidence_calculator = get_solar_database(latitude, longitude)
 
-    for start, finish, daytime in daytimes_over_range_at(obs):
+    first_day = ref_start.date()
+    for i, (start, finish, daytime) in enumerate(daytimes_over_range_at(obs)):
         if not daytime:
             pass
+
+        direct_power, indirect_power = incidence_calculator(
+            first_day + datetime.timedelta(days=i)
+        )
 
         delta = (daytime[1] - daytime[0]).total_seconds()
         n = max(2, int(math.ceil(delta / max_dt)))

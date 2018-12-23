@@ -6,6 +6,9 @@
 import os
 import struct
 import dbm
+import math
+import numpy as np
+import scipy.interpolate
 
 dbm_file = os.path.abspath(
     os.path.dirname(os.path.realpath(__file__)) + '/../databases/ABES2017/ABES.dbm'
@@ -43,20 +46,16 @@ class IndexedStorage:
 
     def __getitem__(self, key):
         value = self.db[self.encode_key(key)]
-        assert(len(value) == 12*4*2)
+        assert(len(value) == 12*8*2)
 
-        direct_normal = array.array('f')
-        direct_normal.frombytes(value[:48])
-
-        diffuse = array.array('f')
-        diffuse.frombytes(value[48:])
-
-        return direct_normal, diffuse
+        ret = np.frombuffer(value)
+        ret.shape = (2, 12)
+        return ret
 
     def __enter__(self):
-        pass
+        return self
 
-    def __exit__(*args):
+    def __exit__(self, *args):
         del self.db
 
     @staticmethod
@@ -64,5 +63,30 @@ class IndexedStorage:
         return struct.pack('hh', *key)
 
 # Returns the mean irration per month in a given location:
-def get_montly_irradiation(latitude, longitude):
-    pass # TODO: implement
+def get_montly_incidence(latitude, longitude):
+    # Convert latitude and longitude to key space
+    fk = coords2key(latitude, longitude)
+
+    # Get the 4 known points surrounding the given point:
+    l = tuple(map(math.floor, fk))
+    h = tuple(map(math.ceil, fk))
+
+    # Retrive the incidence from the database:
+    with IndexedStorage() as storage:
+        sw = storage[l]
+        se = storage[l[0], h[1]]
+        ne = storage[h]
+        nw = storage[h[0], l[1]]
+
+    w2e = (fk[1] - l[1])
+    n = nw + w2e * (ne - nw)
+    s = sw + w2e * (se - sw)
+
+    s2n = (fk[0] - l[0])
+    ret = s + s2n * (n - s)
+
+    return tuple(zip(ret[0], ret[1]))
+
+if __name__ == '__main__':
+    import sys
+    print(get_montly_incidence(float(sys.argv[1]), float(sys.argv[2])))
