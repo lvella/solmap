@@ -37,13 +37,15 @@ Vec3 to_vec(AngularPosition pos,
 		glm::angleAxis(float(pos.alt), unit_east), unit_north);
 }
 
-
-static void
+static std::vector<Vec3>
 calculate_yearly_incidence(real latitude, real longitude, real altitude,
 	const Vec3& unit_north, const Vec3& unit_up, const Vec3& unit_east,
 	std::vector<std::unique_ptr<ShadowProcessor>> &processors
 )
 {
+	std::vector<Vec3> direct_incidence;
+	direct_incidence.reserve(60000);
+
 	// The generator of Sun's position:
 	SunSequence ss{latitude, longitude, altitude};
 
@@ -78,6 +80,12 @@ calculate_yearly_incidence(real latitude, real longitude, real altitude,
 				const Vec3 suns_direction = to_vec(val.pos,
 					unit_north, unit_up, unit_east);
 				p->process(suns_direction, val);
+
+				// Store the calculated solar data for later reuse.
+				direct_incidence.push_back(
+					float(val.coefficient * val.direct_power)
+					* suns_direction
+				);
 			}
 		}));
 	}
@@ -95,6 +103,9 @@ calculate_yearly_incidence(real latitude, real longitude, real altitude,
 	for(auto &t: jobs) {
 		t.join();
 	}
+
+	direct_incidence.shrink_to_fit();
+	return direct_incidence;
 }
 
 struct NoComputeQueueFamily: public std::exception {};
@@ -410,6 +421,50 @@ static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 	mesh_name = argv[optind+2];
 }
 
+// Golden section method, straight from Wikipedia page:
+template<class F, class T>
+auto maximize(const F& func, T lo, T hi, size_t iters)
+{
+	// Inverse golden ratio
+	static const double phi = 2.0 / (1.0 + std::sqrt(5.0));
+
+	T a = lo;
+	auto af = func(a);
+
+	T b = hi;
+	auto bf = func(b);
+
+	T c = b - (b - a) * phi;
+	auto cf = func(c);
+
+	T d = a + (b - a) * phi;
+	auto df = func(d);
+
+	for (size_t i = 0; i < iters; ++i) {
+        	if(cf > df) {
+			b = d;
+			bf = df;
+
+			d = c;
+			df = cf;
+
+	    		c = b - (b - a) * phi;
+			cf = func(c);
+		} else {
+			a = c;
+			af = cf;
+
+			c = d;
+			cf = df;
+
+			d = a + (b - a) * phi;
+			df = func(d);
+		}
+	}
+
+	return cf > df ? std::make_pair(c, cf) : std::make_pair(d, df);
+}
+
 int main(int argc, char *argv[])
 {
 	std::ios_base::sync_with_stdio(false);
@@ -438,7 +493,7 @@ int main(int argc, char *argv[])
 	const Vec3 unit_north{0, 0, -1};
 	const Vec3 unit_up{0, 1, 0};
 	const Vec3 unit_east{1, 0, 0};
-	calculate_yearly_incidence(lat, lon, 0,
+	auto solar_data = calculate_yearly_incidence(lat, lon, 0,
 		unit_north, unit_up, unit_east, ps);
 
 	// Get results:
@@ -473,22 +528,34 @@ int main(int argc, char *argv[])
 			<< "%)\n";
 	}
 
-	Vec3 best_dir = glm::normalize(dir_total);
+	// Find the best placement angle with a maximization method:
+	auto energy_calc = [&](double alt) {
+		AngularPosition pos {.az=0.0, .alt=M_PI*0.5 - alt};
+		const Vec3 best = to_vec(pos, unit_north, unit_up, unit_east);
 
-	real best_alt = std::acos(best_dir.y);
+		double energy_at_best = dif_total;
+		for(auto& sun: solar_data) {
+			energy_at_best += std::max(0.0f, dot(sun, best));
+		}
 
-	// Project total to the surface plane, to calculate azimuth:
-	Vec3 plane_dir{dir_total.x, 0.0, dir_total.z};
-	real best_az = std::acos(glm::dot(Vec3{0, 0, -1}, plane_dir)
-		/ glm::length(plane_dir));
+		return energy_at_best;
+	};
+
+	auto best_alt = maximize(energy_calc, -M_PI * 0.5, M_PI * 0.5, 20);
+	double best_az = 0.0;
+	if(best_alt.first < 0.0) {
+		best_az = 180.0;
+		best_alt.first = -best_alt.first;
+	}
 
 	std::cout << "\nReport:\n"
 		" - Total daytime over year: " << suntime / 3600.0 << " hours\n"
 		" - Best placement for latitude "
 		<< lat << " and longitude " << lon
 		<< " is:\n"
-		"    - Altitude: " << to_deg(best_alt) << "°\n"
-		"    - Azimuth: " << to_deg(best_az) << "°\n"
+		"    - Altitude: " << to_deg(best_alt.first) << "°\n"
+		"    - Azimuth: " << best_az << "°\n"
 		" - At this orientation, the total incident energy over a year is: "
-		<< (dot(dir_total, best_dir) + dif_total) * j2kwh << " kWh/m²\n";
+		<< best_alt.second * j2kwh << " kWh/m²"
+		<< std::endl;
 }
