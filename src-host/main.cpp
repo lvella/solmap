@@ -318,6 +318,11 @@ void usage(const char *cmd)
 		"\tCutoff must be between 0 and 1, where 0 is the smallest\n"
 		"\tmesh element and 1 is the biggest.\n"
 		"\n"
+		"    -t --tilt-evaluate=<angle>\n"
+		"\tGiven in degrees, the energy incidence over a surface with\n"
+		"\twith the given tilt is calculated. Can be supplied\n"
+		"\tmultiple times.\n"
+		"\n"
 		"Parameters:\n"
 		"    latitude\n"
 		"\tLatitde, given as degrees in decimal notation,\n"
@@ -366,13 +371,15 @@ static Quat parse_quat(const char* opt, const char* cmd)
 }
 
 static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
-	real& lat, real& lon, std::string& mesh_name, real &filter_cutoff)
+	real& lat, real& lon, std::string& mesh_name, real &filter_cutoff,
+	std::vector<double> &test_tilts)
 {
 	const static struct option long_options[] =
 	{
 		{"rotation-quaternion", required_argument, nullptr, 'q'},
 		{"scale",               required_argument, nullptr, 's'},
 		{"fine-pass-filter",	required_argument, nullptr, 'f'},
+		{"test-tilt",           required_argument, nullptr, 't'},
 		{nullptr, 0, nullptr, 0}
 	};
 
@@ -382,7 +389,7 @@ static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 
 	opterr = 0;
 	for(;;) {
-		int opt = getopt_long (argc, argv, "+q:s:f:",
+		int opt = getopt_long (argc, argv, "+q:s:f:t:",
 			long_options, nullptr);
 
 		if(opt == -1) {
@@ -398,6 +405,9 @@ static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 			break;
 		case 'f':
 			filter_cutoff = parse_real(optarg, argv[0]);
+			break;
+		case 't':
+			test_tilts.push_back(parse_real(optarg, argv[0]));
 			break;
 		default:
 			goto out;
@@ -474,8 +484,9 @@ int main(int argc, char *argv[])
 	Quat rotation;
 	real scale;
 	real filter_cutoff;
+	std::vector<double> test_tilts;
 
-	parse_args(argc, argv, rotation, scale, lat, lon, mesh_name, filter_cutoff);
+	parse_args(argc, argv, rotation, scale, lat, lon, mesh_name, filter_cutoff, test_tilts);
 
 	UVkInstance vk = initialize_vulkan();
 
@@ -553,9 +564,16 @@ int main(int argc, char *argv[])
 		" - Best placement for latitude "
 		<< lat << " and longitude " << lon
 		<< " is:\n"
-		"    - Altitude: " << to_deg(best_alt.first) << "°\n"
+		"    - Tilt: " << to_deg(best_alt.first) << "°\n"
 		"    - Azimuth: " << best_az << "°\n"
 		" - At this orientation, the total incident energy over a year is: "
-		<< best_alt.second * j2kwh << " kWh/m²"
-		<< std::endl;
+		<< best_alt.second * j2kwh << " kWh/m²\n";
+
+	if(!test_tilts.empty()) {
+		std::cout << "\nAt the given tilts, the incidence is:\n";
+		for(real angle: test_tilts) {
+			const real e = energy_calc(to_rad(angle));
+			std::cout << " - " << angle << "°: " << e * j2kwh << " (" << e / best_alt.second * 100.0 << "% of the best)\n";
+		}
+	}
 }
