@@ -382,7 +382,7 @@ static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 
 	opterr = 0;
 	for(;;) {
-		int opt = getopt_long (argc, argv, "q:s:f:",
+		int opt = getopt_long (argc, argv, "+q:s:f:",
 			long_options, nullptr);
 
 		if(opt == -1) {
