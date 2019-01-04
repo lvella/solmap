@@ -965,7 +965,7 @@ void ShadowProcessor::create_compute_pipeline()
 void ShadowProcessor::process(const Vec3& sun, const InstantaneousData& instant)
 {
 	directional_sum += float(instant.coefficient * instant.direct_power) * sun;
-	diffuse_sum += instant.coefficient + instant.indirect_power;
+	diffuse_sum += instant.coefficient * instant.indirect_power;
 	// For some reason, the sum of integration coefficients adds to total time:
 	time_sum += instant.coefficient;
 	++count;
