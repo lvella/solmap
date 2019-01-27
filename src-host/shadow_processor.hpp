@@ -42,7 +42,7 @@ public:
 	void fill_command_buffer(const ShadowProcessor& sp,
 		const MeshBuffers &mesh);
 
-	void compute_frame(const Vec3& sun_direction, const InstantaneousData& instant);
+	void compute_frame(const Vec3& sun_direction, const Vec3& denergy);
 
 	VkFence get_fence()
 	{
@@ -55,7 +55,7 @@ public:
 	}
 
 	void accumulate_result(BufferTransferer& btransf,
-		uint32_t count, double* accum);
+		uint32_t count, Vec3* accum);
 
 private:
 	uint32_t qf_idx;
@@ -146,14 +146,14 @@ public:
 		return count;
 	}
 
-	void accumulate_result(double *accum);
+	void accumulate_result(Vec3 *accum);
 
 private:
 	friend class TaskSlot;
 
 	// Empirically, 5 seems to be the optimal number
 	// in a GeForce GTX 760. Maybe this number should
-	// be emprirically optimized between runs.
+	// be dynamically optimized between runs.
 	static const unsigned SLOTS_PER_QUEUE = 5;
 
 	std::string device_name;

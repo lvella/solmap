@@ -10,13 +10,9 @@ layout(set=0, binding = 0) uniform GlobalInput
 	// where the scalar component is w.
 	vec4 to_sun_rotation;
 
-	// Direct power: data.x
-	// Indirect power: data.y
-	// Integration coefficient: data.w
-	vec4 data;
-
-	// Vector point to sun in the sky.
-	vec3 suns_direction;
+	// Vector point to sun in the sky, scaled with the
+	// energy times integration factor.
+	vec3 dir_energy;
 };
 
 layout(set=1, binding = 0) uniform sampler2D depth_map;
@@ -34,7 +30,7 @@ layout(std430, set=1, binding = 1) buffer Input
 
 layout(std430, set=1, binding = 2) buffer Output
 {
-	float incidence[NUM_POINTS];
+	vec4 incidence[NUM_POINTS];
 };
 
 #include "quaternion.glsl"
@@ -58,18 +54,18 @@ void main()
 		p.position.xyz
 	) + vec3(0.5, 0.5, 0.5);
 
-	// Accumulate indirect sunlight:
-	float acum = data.y;
-
 	// Depth test
 	float visible_dist = texture(depth_map, pos.xy).r;
 	if(pos.z <= (visible_dist + tol)) {
 		// Point is exposed, accumulate direct solar incidence.
-		// max() is a precaution, because points facing
-		// outwards the sun should never be exposed.
-		acum += data.x * max(0.0, dot(suns_direction, p.normal.xyz));
-	}
 
-	// Multiply integration coefficient:
-	incidence[gl_GlobalInvocationID.x] += data.w * acum;
+		// Check is sun is inciding from behing.
+		// This is a precaution, because points facing
+		// outwards the sun should never be exposed.
+		// TODO: test if this is really needed and remove,
+		// because it is expensive and requires normal input.
+		if(dot(dir_energy, p.normal.xyz) > 0) {
+			incidence[gl_GlobalInvocationID.x].xyz += dir_energy;
+		}
+	}
 }

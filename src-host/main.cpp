@@ -264,7 +264,7 @@ UVkInstance initialize_vulkan()
 	return vk;
 }
 
-void dump_vtk(const char* fname, const Mesh& mesh, real scale, double *result)
+void dump_vtk(const char* fname, const Mesh& mesh, real scale, double dif_total, Vec3 *directional)
 {
 	std::ofstream fd(fname);
 
@@ -297,7 +297,17 @@ void dump_vtk(const char* fname, const Mesh& mesh, real scale, double *result)
 		"LOOKUP_TABLE default\n";
 
 	for(uint32_t i = 0; i < mesh.vertices.size(); ++i) {
-		fd << result[i] << '\n';
+		const double result = dif_total
+			+ glm::dot(mesh.vertices[i].normal, directional[i]);
+		fd << result << '\n';
+	}
+
+	fd << "VECTORS direction float\n";
+
+	for(uint32_t i = 0; i < mesh.vertices.size(); ++i) {
+		fd << directional[i].x << ' ' <<
+			directional[i].y << ' ' <<
+			directional[i].z << '\n';
 	}
 }
 
@@ -507,7 +517,7 @@ int main(int argc, char *argv[])
 		unit_north, unit_up, unit_east, ps);
 
 	// Get results:
-	std::vector<double> result(test_mesh.vertices.size(), 0.0f);
+	std::vector<Vec3> dir_energy(test_mesh.vertices.size(), Vec3{0.0f, 0.0f, 0.0f});
 	Vec3 dir_total{0.0, 0.0, 0.0};
 	double dif_total = 0.0;
 	double suntime = 0.0;
@@ -519,16 +529,17 @@ int main(int argc, char *argv[])
 		suntime += p->get_time_sum();
 
 		count += p->get_process_count();
-		p->accumulate_result(result.data());
+		p->accumulate_result(dir_energy.data());
 	}
 	const float icount = 1.0f / count;
 
 	// Convert from j/m² to kWh/m²
 	const double j2kwh = 1.0 / 3600.0 / 1000.0;
-	for(double &r: result) {
+	for(Vec3 &r: dir_energy) {
 		r *= j2kwh;
 	}
-	dump_vtk("incidence.vtk", test_mesh, scale, result.data());
+	dump_vtk("incidence.vtk", test_mesh, scale,
+		dif_total * j2kwh, dir_energy.data());
 
 	std::cout << "Workload distribution:\n";
 	for(size_t i = 0; i < ps.size(); ++i) {

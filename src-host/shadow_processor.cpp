@@ -9,8 +9,7 @@ static const uint32_t frame_size = 2048;
 struct GlobalInputData
 {
 	Quat orientation;
-	Vec4 data;
-	Vec3 sun_direction;
+	Vec3 dir_energy;
 };
 
 template <typename T1, typename T2>
@@ -81,7 +80,7 @@ TaskSlot::TaskSlot(
 	global_map{device, global_buf.get_visible_mem()},
 	result_buf{device, mem_props,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		static_cast<uint32_t>(num_points * sizeof(float)),
+		static_cast<uint32_t>(num_points * sizeof(Vec4)),
 		BufferAccessDirection(HOST_WILL_WRITE_BIT | HOST_WILL_READ_BIT)
 	}
 {
@@ -285,9 +284,9 @@ void TaskSlot::create_command_buffer(
 	});
 
 	// Zero the result buffer
-	btransf.transfer<float*>(result_buf, sp.num_points,
-		HOST_WILL_WRITE_BIT, [&](float* ptr) {
-			std::fill_n(ptr, sp.num_points, 0.0f);
+	btransf.transfer<Vec4*>(result_buf, sp.num_points,
+		HOST_WILL_WRITE_BIT, [&](Vec4* ptr) {
+			std::fill_n(ptr, sp.num_points, Vec4{0.0f, 0.0f, 0.0f, 0.0f});
 		}
 	);
 }
@@ -389,7 +388,7 @@ void TaskSlot::fill_command_buffer(const ShadowProcessor& sp,
 	chk_vk(vkEndCommandBuffer(cmd_bufs[0]));
 }
 
-void TaskSlot::compute_frame(const Vec3& sun_direction, const InstantaneousData& instant)
+void TaskSlot::compute_frame(const Vec3& sun_direction, const Vec3& denergy)
 {
 	// Get pointer to device memory:
 	auto params = global_map.get<GlobalInputData*>();
@@ -399,15 +398,8 @@ void TaskSlot::compute_frame(const Vec3& sun_direction, const InstantaneousData&
 	params->orientation = rot_from_unit_a_to_unit_b(
 		sun_direction, Vec3{0.0, 0.0, -1.0});
 
-	// Set sun's direction:
-	params->sun_direction = sun_direction;
-
-	// Sets incidence power:
-	params->data.x = instant.direct_power;
-	params->data.y = instant.indirect_power;
-
-	// Sets integration coefficient:
-	params->data.w = instant.coefficient;
+	// Sets scaled sun's direction:
+	params->dir_energy = denergy;
 
 	// Flush the copy.
 	global_map.flush();
@@ -428,12 +420,14 @@ void TaskSlot::compute_frame(const Vec3& sun_direction, const InstantaneousData&
 }
 
 void TaskSlot::accumulate_result(BufferTransferer& btransf,
-	uint32_t count, double* accum)
+	uint32_t count, Vec3* accum)
 {
-	btransf.transfer<float*>(result_buf, count,
-		HOST_WILL_READ_BIT, [&](float* ptr) {
+	btransf.transfer<Vec4*>(result_buf, count,
+		HOST_WILL_READ_BIT, [&](Vec4* ptr) {
 			for(uint32_t i = 0; i < count; ++i) {
-				accum[i] += ptr[i];
+				accum[i].x += ptr[i].x;
+				accum[i].y += ptr[i].y;
+				accum[i].z += ptr[i].z;
 			}
 		}
 	);
@@ -964,8 +958,12 @@ void ShadowProcessor::create_compute_pipeline()
 
 void ShadowProcessor::process(const Vec3& sun, const InstantaneousData& instant)
 {
-	directional_sum += float(instant.coefficient * instant.direct_power) * sun;
+	const Vec3 directional_energy =
+		float(instant.coefficient * instant.direct_power) * sun;
+
+	directional_sum += directional_energy;
 	diffuse_sum += instant.coefficient * instant.indirect_power;
+
 	// For some reason, the sum of integration coefficients adds to total time:
 	time_sum += instant.coefficient;
 	++count;
@@ -996,10 +994,10 @@ void ShadowProcessor::process(const Vec3& sun, const InstantaneousData& instant)
 
 	// Send the processing to that slot.
 	vkResetFences(d.get(), 1, &fence_set[task_idx]);
-	task_pool[task_idx].compute_frame(sun, instant);
+	task_pool[task_idx].compute_frame(sun, directional_energy);
 }
 
-void ShadowProcessor::accumulate_result(double *accum)
+void ShadowProcessor::accumulate_result(Vec3 *accum)
 {
 	chk_vk(vkDeviceWaitIdle(d.get()));
 	// TODO: this is wrong: must separate btransf by queue family.
