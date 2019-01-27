@@ -49,6 +49,8 @@ ${BDIR}/solmap: ${INC_SHADERS} ${OBJS}
 
 -include $(OBJS:o=d)
 
+${BDIR}/shadow_processor.o: ${BINCDIR}/depth-map.vert.inc ${BINCDIR}/incidence-calc.comp.inc
+
 ${BDIR}/%.o: ${SDIR}/%.cpp | ${BDIR}
 	${CXX} -c -MMD ${FLAGS} ${SDIR}/$*.cpp -o ${BDIR}/$*.o
 
