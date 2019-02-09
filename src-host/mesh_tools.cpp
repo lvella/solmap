@@ -132,54 +132,188 @@ static Mesh import_scene_from_file(const std::string& filename)
 	return ret;
 }
 
-static real parallelogram_sq_area(Vec3& a, Vec3& b, Vec3& c)
+static real parallelogram_area(const Vec3& a, const Vec3& b, const Vec3& c)
 {
-	return glm::length2(glm::cross(b - a, c - a));
+	return glm::length(glm::cross(b - a, c - a));
 }
 
-static void fine_pass_filter(Mesh &m, float filter_cutoff)
+template<typename T, size_t MAX_SIZE>
+class LimitedVector
 {
+public:
+	bool try_push_back(const T& value)
+	{
+		if(push_count < MAX_SIZE) {
+			v[push_count++] = value;
+			return true;
+		} else {
+			push_count++;
+			return false;
+		}
+	}
+
+	T& operator[](size_t pos)
+	{
+		return v[pos];
+	}
+
+	const T& operator[](size_t pos) const
+	{
+		return v[pos];
+	}
+
+	size_t get_push_count() const
+	{
+		return push_count;
+	}
+
+	size_t size() const
+	{
+		return std::min(push_count, MAX_SIZE);
+	}
+
+private:
+	size_t push_count = 0;
+	std::array<T, MAX_SIZE> v;
+};
+
+class Edge
+{
+public:
+	Edge(uint32_t v0, uint32_t v1)
+	{
+		if(v0 > v1) {
+			std::swap(v0, v1);
+		}
+		v[0] = v0;
+		v[1] = v1;
+	}
+
+	bool operator==(const Edge& o) const
+	{
+		return v == o.v;
+	}
+
+	uint32_t get(uint8_t i) const
+	{
+		return v[i];
+	}
+
+private:
+	friend class HashEdge;
+	std::array<uint32_t, 2> v;
+};
+
+class HashEdge
+{
+public:
+	size_t operator()(const Edge& e) const
+	{
+		std::size_t hash = e.v[0];
+		boost::hash_combine(hash, e.v[1]);
+		return hash;
+	}
+};
+
+Edge edge(const uint32_t *indices, uint8_t eidx)
+{
+	return Edge{indices[eidx], indices[(eidx+1)%3]};
+}
+
+
+// Mark the fringe triangles which must be removed, as per cutoff:
+static std::vector<bool> fringe_finder(const Mesh &m, float filter_cutoff)
+{
+	std::vector<bool> to_remove(m.indices.size()/3, false);
+
 	if(m.indices.empty()) {
-		return;
+		return to_remove;
 	}
 
 	// Find the largest and the smallest (2*area)²
 	// of the triangular elements.
-	float largest = parallelogram_sq_area(
-		m.vertices[m.indices[0]].position,
-		m.vertices[m.indices[1]].position,
-		m.vertices[m.indices[2]].position
-	);
-	float smallest = largest;
 
-	std::vector<float> areas(m.indices.size()/3);
-	areas[0] = largest;
+	std::vector<float> areas(to_remove.size());
+	double avg = 0.0;
 
-	for(size_t j = 1; j < areas.size(); ++j) {
+	for(size_t j = 0; j < areas.size(); ++j) {
 		size_t idx = j * 3;
-		float sq_2_area = parallelogram_sq_area(
+		real area = parallelogram_area(
 			m.vertices[m.indices[idx]].position,
 			m.vertices[m.indices[idx+1]].position,
 			m.vertices[m.indices[idx+2]].position
 		);
 
-		if(sq_2_area > largest) {
-			largest = sq_2_area;
-		} else if(sq_2_area < smallest) {
-			smallest = sq_2_area;
-		}
+		avg += area;
+		areas[j] = area;
+	}
+	avg /= areas.size();
 
-		areas[j] = sq_2_area;
+	// Find filter cutoff limit:
+	const float limit = avg * filter_cutoff;
+
+	// Build map edge → triangle:
+	std::unordered_map<Edge, LimitedVector<uint32_t, 2>, HashEdge> edge2tri;
+	for(uint32_t i = 0; i < areas.size(); ++i) {
+		const uint32_t *idx = &m.indices[i * 3];
+
+		edge2tri[edge(idx, 0)].try_push_back(i);
+		edge2tri[edge(idx, 1)].try_push_back(i);
+		edge2tri[edge(idx, 2)].try_push_back(i);
 	}
 
-	// Find filter cutoff limit as squared parallelogram area:
-	largest = std::sqrt(largest);
-	smallest = std::sqrt(smallest);
-	float limit = smallest + filter_cutoff * (largest - smallest);
+	// Start the search from all triangles at the border of the mesh
+	// i.e.: whose at least one edge is not shared with other triangles.
+	std::deque<uint32_t> queue;
+	for(const auto& e2t: edge2tri) {
+		if(e2t.second.size() < 2) {
+		       	uint32_t tri = e2t.second[0];
+			if(!to_remove[tri] && areas[tri] >= limit) {
+				to_remove[tri] = true;
+				queue.push_back(tri);
+			}
+		}
+	}
 
-	limit = limit * limit;
+	// Breadth search to mark for deletion every
+	// big enough triangle reachable from the border.
+	while(!queue.empty()) {
+		const uint32_t tri = queue.front();
+		queue.pop_front();
+		const uint32_t *idx = &m.indices[tri * 3];
 
-	// Copy faces whose (2*area)² is below the cutoff
+		for(uint8_t i = 0; i < 3; ++i) {
+			auto &tris = edge2tri[edge(idx, i)];
+			if(tris.get_push_count() != 2) {
+				continue;
+			}
+
+			uint32_t next = tris[0];
+			if(next == tri) {
+				next = tris[1];
+			}
+
+			if(!to_remove[next] && areas[next] >= limit) {
+				to_remove[next] = true;
+				queue.push_back(next);
+			}
+		}
+	}
+
+	return to_remove;
+}
+
+
+// Starting from the borders, remove every reachable element
+// whose size is greater than cutoff.
+static void fine_pass_filter(Mesh &m, float filter_cutoff)
+{
+	std::cout << "Filtering coarse border... ";
+	std::cout.flush();
+
+	auto to_remove = fringe_finder(m, filter_cutoff);
+
+	// Copy faces who are not marked for remove
 	// (and the corresponding vertices):
 	std::vector<uint32_t> new_indices;
 	std::vector<VertexData> new_vertices;
@@ -187,8 +321,8 @@ static void fine_pass_filter(Mesh &m, float filter_cutoff)
 
 	size_t removed_count = 0;
 
-	for(size_t i = 0; i < areas.size(); ++i) {
-		if(areas[i] < limit) {
+	for(size_t i = 0; i < to_remove.size(); ++i) {
+		if(!to_remove[i]) {
 			for(size_t j = 0; j < 3; ++j) {
 				uint32_t idx = m.indices[i * 3 + j];
 				auto r = old_to_new.emplace(
@@ -204,7 +338,7 @@ static void fine_pass_filter(Mesh &m, float filter_cutoff)
 		}
 	}
 
-	std::cout << "Removed count: " << removed_count << '/' << (m.indices.size()/3)
+	std::cout << "removed count: " << removed_count << '/' << (m.indices.size()/3)
 		<< " (" << float(removed_count) * 100.0 / float(m.indices.size()/3)
 		<< " %)" << std::endl;
 
@@ -222,7 +356,7 @@ Mesh load_scene(const std::string& filename, const Quat& rotation,
 	Mesh ret = import_scene_from_file(filename);
 
 	// Filter out too big triangles.
-	if(filter_cutoff < 1.0) {
+	if(filter_cutoff < std::numeric_limits<real>::infinity()) {
 		fine_pass_filter(ret, filter_cutoff);
 	}
 
@@ -249,43 +383,6 @@ Mesh load_scene(const std::string& filename, const Quat& rotation,
 
 	return ret;
 }
-
-struct OrderedPair
-{
-	OrderedPair(uint32_t a, uint32_t b)
-	{
-		if(a < b) {
-			first = a;
-			second = b;
-		} else {
-			first = b;
-			second = a;
-		}
-	}
-
-	bool operator==(const OrderedPair& other) const
-	{
-		return (first == other.first)
-			&& (second == other.second);
-	}
-
-	uint32_t first;
-	uint32_t second;
-};
-
-template<>
-class std::hash<OrderedPair>
-{
-public:
-	size_t operator()(OrderedPair const& s) const noexcept
-	{
-		std::size_t seed = 0;
-		boost::hash_combine(seed, s.first);
-		boost::hash_combine(seed, s.second);
-
-		return seed;
-	}
-};
 
 class Refiner
 {
@@ -434,7 +531,7 @@ public:
 
 	uint32_t refine_edge(uint32_t a, uint32_t b)
 	{
-		const OrderedPair key{a, b};
+		const Edge key{a, b};
 		auto ret = ref_edge.try_emplace(key);
 
 		// Edge already refined, return the middle vertex:
@@ -443,8 +540,8 @@ public:
 		}
 
 		// Add a new vertex at the middle
-		auto& va = vs[key.first];
-		auto& vb = vs[key.second];
+		auto& va = vs[key.get(0)];
+		auto& vb = vs[key.get(1)];
 
 		vs.emplace_back(
 			(va.position + vb.position)*0.5f,
@@ -462,7 +559,7 @@ private:
 	std::vector<VertexData>& vs;
 	float maxl2;
 
-	std::unordered_map<OrderedPair, uint32_t> ref_edge;
+	std::unordered_map<Edge, uint32_t, HashEdge> ref_edge;
 };
 
 void refine(Mesh& m, float max_length)

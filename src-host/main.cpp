@@ -324,9 +324,8 @@ void usage(const char *cmd)
 		"\tScale applied to the 3-D model (default: 1.0).\n"
 		"\n"
 		"    -f --fine-pass-filter=<cutoff>\n"
-		"\tRemove triangles larger than cutoff from 3-D model.\n"
-		"\tCutoff must be between 0 and 1, where 0 is the smallest\n"
-		"\tmesh element and 1 is the biggest.\n"
+		"\tRemove triangles whose area is greater than <cutoff>\n"
+		"\ttimes the average of triangle areas.\n"
 		"\n"
 		"    -t --tilt-evaluate=<angle>\n"
 		"\tGiven in degrees. Calculate the energy incidence over a\n"
@@ -394,7 +393,7 @@ static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 
 	rotation = Quat(1.0, 0.0, 0.0, 0.0);
 	scale = 1.0;
-	filter_cutoff = 1.0;
+	filter_cutoff = std::numeric_limits<real>::infinity();
 
 	opterr = 0;
 	for(;;) {
@@ -430,8 +429,8 @@ static void parse_args(int argc, char *argv[], Quat& rotation, real& scale,
 		usage(argv[0]);
 	}
 
-	if(filter_cutoff < 0.0 || filter_cutoff > 1.0) {
-		std::cout << "Error: Fine pass filter factor must be between 0 and 1." << std::endl;
+	if(filter_cutoff <= 0.0) {
+		std::cout << "Error: Fine pass filter factor must be greater than 0." << std::endl;
 		usage(argv[0]);
 	}
 
