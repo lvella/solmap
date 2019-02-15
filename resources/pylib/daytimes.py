@@ -5,6 +5,10 @@ import datetime
 import functools
 import math
 
+# Exception thrown if position is not covered by database.
+class OutOfDatabaseDomain(Exception):
+    pass
+
 # Inverse golden ratio
 phi = 2.0 / (1.0 + 5.0**0.5)
 
@@ -60,10 +64,15 @@ def get_solar_database(latitude, longitude):
     # TODO: generalize to support multiple databases
     import ABES2017
 
-    data = ABES2017.get_montly_incidence(latitude, longitude)
-    def get_incidence(date):
-        nonlocal data
-        return data[date.month - 1]
+    try:
+        data = ABES2017.get_montly_incidence(latitude, longitude)
+        def get_incidence(date):
+            nonlocal data
+            return data[date.month - 1]
+    except OutOfDatabaseDomain:
+        print("Warning: Location not covered by database.\nUsing 1000 watts as direct power and 0 as indirect.")
+        def get_incidence(date):
+            return (1000.0, 0.0)
 
     return get_incidence
 
