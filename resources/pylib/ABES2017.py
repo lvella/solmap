@@ -8,7 +8,6 @@ import struct
 import dbm
 import math
 import numpy as np
-import scipy.interpolate
 
 from daytimes import OutOfDatabaseDomain
 
