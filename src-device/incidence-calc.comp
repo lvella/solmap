@@ -59,7 +59,7 @@ void main()
 	if(pos.z <= (visible_dist + tol)) {
 		// Point is exposed, accumulate direct solar incidence.
 
-		// Check is sun is inciding from behing.
+		// Check if sun is inciding from behing.
 		// This is a precaution, because points facing
 		// outwards the sun should never be exposed.
 		// TODO: test if this is really needed and remove,
