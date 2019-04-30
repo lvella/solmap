@@ -138,7 +138,7 @@ def get_montly_incidence(latitude, longitude):
                 pass
 
         if len(x) == 4:
-            ret = bilinear(fk, l, *z)
+            ret = bilinear2d(fk, l, *z)
         elif len(x) == 3:
             ret = linear2d(fk, x, y, z)
         elif len(x) == 2:
