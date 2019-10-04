@@ -34,9 +34,7 @@ ${BDIR}/gps_converter.so: ${BDIR}/libwgs84.a ${BDIR}/gps_converter.c | ${BDIR}
 	${CC} -shared -fPIC `pkg-config python3 --cflags --libs` -Iexternal/libwgs84/src ${FLAGS} ${BDIR}/gps_converter.c  ${BDIR}/libwgs84.a -o ${BDIR}/gps_converter.so
 
 ${BDIR}/gps_converter.c: georeferencer_build.py | ${BDIR}
-	( \
-		python3 georeferencer_build.py \
-	)
+	python3 georeferencer_build.py
 
 ${BDIR}/libwgs84.a: | ${BDIR}
 	make -C external/libwgs84 build/libwgs84.a FLAGS="-flto -fPIC $(OPTFLAGS)"
@@ -57,9 +55,7 @@ ${BDIR}/sun_position.o: ${BDIR}/sun_position.c ${SDIR}/sun_position.h
 	${CC} -c `pkg-config python3 --cflags` -I${SDIR} ${FLAGS} ${BDIR}/sun_position.c -o ${BDIR}/sun_position.o
 
 ${BDIR}/sun_position.c: plugin_build.py | ${BDIR}
-	( \
-		python3 plugin_build.py \
-	)
+	python3 plugin_build.py
 
 # Compile the shaders to includable SPIR-V
 ${BINCDIR}/%.inc: ${DDIR}/% | ${BINCDIR}
