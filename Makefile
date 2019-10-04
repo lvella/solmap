@@ -35,8 +35,7 @@ ${BDIR}/gps_converter.so: ${BDIR}/libwgs84.a ${BDIR}/gps_converter.c | ${BDIR}
 
 ${BDIR}/gps_converter.c: georeferencer_build.py | ${BDIR}
 	( \
-		. venv/bin/activate; \
-		python georeferencer_build.py \
+		python3 georeferencer_build.py \
 	)
 
 ${BDIR}/libwgs84.a: | ${BDIR}
@@ -59,8 +58,7 @@ ${BDIR}/sun_position.o: ${BDIR}/sun_position.c ${SDIR}/sun_position.h
 
 ${BDIR}/sun_position.c: plugin_build.py | ${BDIR}
 	( \
-		. venv/bin/activate; \
-		python plugin_build.py \
+		python3 plugin_build.py \
 	)
 
 # Compile the shaders to includable SPIR-V
