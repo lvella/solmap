@@ -356,9 +356,9 @@ Mesh load_scene(const std::string& filename, const Quat& rotation,
 	Mesh ret = import_scene_from_file(filename);
 
 	// Filter out too big triangles.
-	if(filter_cutoff < std::numeric_limits<real>::infinity()) {
+	/*if(filter_cutoff < std::numeric_limits<real>::infinity()) {
 		fine_pass_filter(ret, filter_cutoff);
-	}
+	}*/
 
 	// Find the bounding sphere of the point set:
 	Vec3 center;
