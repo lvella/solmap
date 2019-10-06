@@ -503,6 +503,13 @@ int main(int argc, char *argv[])
 	{
 		auto shadow_mesh = test_mesh;
 		//refine(test_mesh, 0.05);
+		std::cout << "Mesh size:\n    Vertices: " << test_mesh.vertices.size()
+			<< " (" << test_mesh.vertices.size()
+			* sizeof(decltype(test_mesh.vertices)::value_type)
+			/ 1024.0 / 1024.0 << " MB)\n    Indices: "
+			<< test_mesh.indices.size() << " (" << test_mesh.vertices.size()
+			* sizeof(decltype(test_mesh.indices)::value_type) / 1024.0 / 1024.0
+			<< " MB)" << std::endl;
 
 		ps = create_procs_from_devices(vk.get(),
 			shadow_mesh, test_mesh.vertices);

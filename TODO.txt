@@ -3,6 +3,8 @@
  - Bug: artifacts when there are too many testing points.
     - Culprit is Intel GPU, investigate how to fix.
 
+ - Bug: Radeon crashes on too big mesh.
+
  - Handle python errors properly.
 
  - Use better time discretization.
