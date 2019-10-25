@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 # This script generates the ABES.dbm file from the original "Atlas Brasileiro
-# de Energia Solar - 2ª Edição" database
-# (available at http://labren.ccst.inpe.br/atlas_2017.html). Generated file is
-# used by solmap to quickly query the solar incidence over the year for a given
-# latidude and longitue. Requires dbfread module and takes a looong time to run.
+# de Energia Solar - 2ª Edição" database, CSV version, available at
+# http://labren.ccst.inpe.br/atlas_2017.html
+# Generated file is used by solmap to quickly query the solar incidence over the
+# year for a given latidude and longitue. It takes a looong time to run.
 
 import os
 import sys
@@ -12,6 +12,7 @@ import sys
 # Setup import path
 sys.path.append(os.path.dirname(os.path.realpath(__file__)) + '/../../pylib')
 
+import csv
 import array
 import math
 import ephem
@@ -59,28 +60,54 @@ def energy2power(date, days, mean_energy):
     mean_power = array.array('d', ((e * 3600.0 * 4.0) / dt for e, dt in zip(mean_energy, monthly_daytime)))
     return mean_power
 
-month_keys = [
-        '01_JAN',
-        '02_FEB',
-        '03_MAR',
-        '04_APR',
-        '05_MAY',
-        '06_JUN',
-        '07_JUL',
-        '08_AUG',
-        '09_SEP',
-        '10_OCT',
-        '11_NOV',
-        '12_DEZ'
+expected_header = [
+    'ID',
+    'COUNTRY',
+    'LON',
+    'LAT',
+    'ANNUAL',
+    'JAN',
+    'FEB',
+    'MAR',
+    'APR',
+    'MAY',
+    'JUN',
+    'JUL',
+    'AUG',
+    'SEP',
+    'OCT',
+    'NOV',
+    'DEC'
 ]
 
-def extract_row_data(record):
-    float_key = ABES.coords2key(record['LAT'], record['LON'])
+lat_idx = expected_header.index('LAT')
+lon_idx = expected_header.index('LON')
+
+january_idx = expected_header.index('JAN')
+
+def extract_row_data(position, monthly_vals):
+    assert(len(monthly_vals) == 12)
+
+    float_key = ABES.coords2key(*map(float, position))
     key = tuple(map(round, float_key))
     assert(all((math.fabs(k - fk) < 1e-8 for k, fk in zip(key, float_key))))
 
-    mean_energy = [record[month] for month in month_keys]
+    mean_energy = [int(val) for val in monthly_vals]
     return (key, mean_energy)
+
+def extract_csv_data(filename):
+    with open(filename, 'r', newline='') as csvfile:
+        reader = csv.reader(csvfile, delimiter=';')
+        if next(reader) != expected_header:
+            print(f'Error: Unexpected CSV header when reading {filename}.')
+            print('This file does not look like ABES database I know of.')
+            sys.exit(1)
+
+        for row in reader:
+            yield extract_row_data(
+                (row[lat_idx], row[lon_idx]),
+                row[january_idx:january_idx+12]
+            )
 
 def convert_to_power(args):
     key, dirn, diff = args
@@ -104,13 +131,13 @@ def convert_to_power(args):
     return key, pdir, pdif
 
 def create_indexed_database(direct_normal_dbf, diffuse_dbf):
-    from dbfread import DBF
+    import csv
     import multiprocessing.pool
 
     storage = ABES.IndexedStorage(ABES.dbm_file, 'n')
 
-    dirnorm = dict(map(extract_row_data, DBF(direct_normal_dbf)))
-    diffuse = dict(map(extract_row_data, DBF(diffuse_dbf)))
+    dirnorm = dict(extract_csv_data(direct_normal_dbf))
+    diffuse = dict(extract_csv_data(diffuse_dbf))
 
     assert(len(dirnorm) == len(diffuse))
 
