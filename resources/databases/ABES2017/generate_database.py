@@ -130,14 +130,14 @@ def convert_to_power(args):
 
     return key, pdir, pdif
 
-def create_indexed_database(direct_normal_dbf, diffuse_dbf):
+def create_indexed_database(direct_normal_csv, diffuse_csv):
     import csv
     import multiprocessing.pool
 
     storage = ABES.IndexedStorage(ABES.dbm_file, 'n')
 
-    dirnorm = dict(extract_csv_data(direct_normal_dbf))
-    diffuse = dict(extract_csv_data(diffuse_dbf))
+    dirnorm = dict(extract_csv_data(direct_normal_csv))
+    diffuse = dict(extract_csv_data(diffuse_csv))
 
     assert(len(dirnorm) == len(diffuse))
 
@@ -162,7 +162,7 @@ if __name__ == '__main__':
 Error: missing parameters.
 
 Usage:
-    {} <path to direct_normal_means.dbf> <path to diffuse_means.dbf>
+    {} <path to direct_normal_means.csv> <path to diffuse_means.csv>
 
 You can download DIRECT_NORMAL.zip and DIFFUSE.zip from:
  http://labren.ccst.inpe.br/atlas_2017.html
