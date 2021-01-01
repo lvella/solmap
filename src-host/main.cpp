@@ -302,7 +302,7 @@ void dump_vtk(const char* fname, const Mesh& mesh, real scale, double dif_total,
 		fd << result << '\n';
 	}
 
-	fd << "VECTORS direction float\n";
+	fd << "VECTORS directional_incidence float\n";
 
 	for(uint32_t i = 0; i < mesh.vertices.size(); ++i) {
 		fd << directional[i].x << ' ' <<
@@ -541,11 +541,13 @@ int main(int argc, char *argv[])
 
 	// Convert from j/m² to kWh/m²
 	const double j2kwh = 1.0 / 3600.0 / 1000.0;
+	const double dif_total_kwh = dif_total * j2kwh;
 	for(Vec3 &r: dir_energy) {
 		r *= j2kwh;
 	}
+
 	dump_vtk("incidence.vtk", test_mesh, scale,
-		dif_total * j2kwh, dir_energy.data());
+		dif_total_kwh, dir_energy.data());
 
 	std::cout << "Workload distribution:\n";
 	for(size_t i = 0; i < ps.size(); ++i) {
