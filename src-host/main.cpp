@@ -242,21 +242,13 @@ create_procs_from_devices(VkInstance vk,
 
 UVkInstance initialize_vulkan()
 {
-	const char *layers[] = {
-		"VK_LAYER_LUNARG_standard_validation"
-	};
 	UVkInstance vk{VkInstanceCreateInfo{
 			VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 			nullptr,
 			0,
 			nullptr,
-#ifdef NDEBUG
 			0,
 			nullptr,
-#else
-			1,
-			layers,
-#endif
 			0,
 			nullptr
 		}
