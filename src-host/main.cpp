@@ -256,11 +256,11 @@ UVkInstance initialize_vulkan()
 	return vk;
 }
 
-void dump_vtk(const char* fname, const Mesh& mesh, real scale, double dif_total, Vec3 *directional)
+void dump_vtk(const char* fname, const Mesh& mesh, real scale, double dif_total, double dir_total, Vec3 *directional)
 {
 	std::ofstream fd(fname);
 
-	fd << "# vtk DataFile Version 3.0\n"
+	fd <<	"# vtk DataFile Version 3.0\n"
 		"Daylight solar incidence\n"
 		"ASCII\n"
 		"DATASET POLYDATA\n"
@@ -272,7 +272,7 @@ void dump_vtk(const char* fname, const Mesh& mesh, real scale, double dif_total,
 	}
 
 	uint32_t face_count = mesh.indices.size() / 3;
-	fd << "POLYGONS " << face_count << ' ' << face_count * 4 << '\n';
+	fd <<	"POLYGONS " << face_count << ' ' << face_count * 4 << '\n';
 	{
 		auto ptr = mesh.indices.begin();
 		for(uint32_t i = 0; i < face_count; ++i) {
@@ -284,7 +284,7 @@ void dump_vtk(const char* fname, const Mesh& mesh, real scale, double dif_total,
 		}
 	}
 
-	fd << "POINT_DATA " << mesh.vertices.size() << "\n"
+	fd <<	"POINT_DATA " << mesh.vertices.size() << "\n"
 		"SCALARS incidence float 1\n"
 		"LOOKUP_TABLE default\n";
 
@@ -294,12 +294,26 @@ void dump_vtk(const char* fname, const Mesh& mesh, real scale, double dif_total,
 		fd << result << '\n';
 	}
 
-	fd << "VECTORS directional_incidence float\n";
+	fd <<	"VECTORS directional_incidence float\n";
 
 	for(uint32_t i = 0; i < mesh.vertices.size(); ++i) {
 		fd << directional[i].x << ' ' <<
 			directional[i].y << ' ' <<
 			directional[i].z << '\n';
+	}
+
+	fd <<	"SCALARS shadow_percentage float 1\n"
+		"LOOKUP_TABLE default\n";
+
+	for(uint32_t i = 0; i < mesh.vertices.size(); ++i) {
+		const double result = (1.0 - glm::length(directional[i]) / dir_total) * 100.0;
+
+		// Assert the values are within reasonable ranges, but give
+		// leeway for floating point errors.
+		assert(result >= -1.0);
+		assert(result <= 101.0);
+
+		fd << result << '\n';
 	}
 }
 
@@ -534,12 +548,13 @@ int main(int argc, char *argv[])
 	// Convert from j/m² to kWh/m²
 	const double j2kwh = 1.0 / 3600.0 / 1000.0;
 	const double dif_total_kwh = dif_total * j2kwh;
+	const double dir_total_kwh = glm::length(dir_total) * j2kwh;
 	for(Vec3 &r: dir_energy) {
 		r *= j2kwh;
 	}
 
 	dump_vtk("incidence.vtk", test_mesh, scale,
-		dif_total_kwh, dir_energy.data());
+		dif_total_kwh, dir_total_kwh, dir_energy.data());
 
 	std::cout << "Workload distribution:\n";
 	for(size_t i = 0; i < ps.size(); ++i) {
