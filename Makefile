@@ -2,7 +2,7 @@ CC = gcc
 CXX = g++ -std=c++17
 GLSLC = glslc
 
-OPTFLAGS = -g #-Ofast -march=native -mtune=native -DNDEBUG -flto=4 -fno-fat-lto-objects
+OPTFLAGS = -Ofast -march=native -mtune=native -DNDEBUG -flto=4 -fno-fat-lto-objects
 
 MODULES = \
 	buffer \
@@ -22,7 +22,7 @@ DDIR = src-device
 BDIR = build
 BINCDIR = build/include
 
-LIBS = $(shell pkg-config python3-embed --libs) -lvulkan -lassimp
+LIBS = $(shell pkg-config python-3.9-embed --libs) -lvulkan -lassimp
 FLAGS = ${OPTFLAGS} -pthread -I${BINCDIR}
 
 INC_SHADERS = $(addprefix ${BINCDIR}/,$(SHADERS:=.inc))
@@ -31,7 +31,7 @@ OBJS = $(addprefix ${BDIR}/,$(MODULES:=.o))
 all: ${BDIR}/solmap ${BDIR}/gps_converter.so
 
 ${BDIR}/gps_converter.so: ${BDIR}/libwgs84.a ${BDIR}/gps_converter.c | ${BDIR}
-	${CC} -shared -fPIC `pkg-config python3-embed --cflags --libs` -Iexternal/libwgs84/src ${FLAGS} ${BDIR}/gps_converter.c  ${BDIR}/libwgs84.a -o ${BDIR}/gps_converter.so
+	${CC} -shared -fPIC `pkg-config python-3.9-embed --cflags --libs` -Iexternal/libwgs84/src ${FLAGS} ${BDIR}/gps_converter.c  ${BDIR}/libwgs84.a -o ${BDIR}/gps_converter.so
 
 ${BDIR}/gps_converter.c: georeferencer_build.py | ${BDIR}
 	python3 georeferencer_build.py
@@ -52,7 +52,7 @@ ${BDIR}/%.o: ${SDIR}/%.cpp | ${BDIR}
 	${CXX} -c -MMD ${FLAGS} ${SDIR}/$*.cpp -o ${BDIR}/$*.o
 
 ${BDIR}/sun_position.o: ${BDIR}/sun_position.c ${SDIR}/sun_position.h
-	${CC} -c `pkg-config python3-embed --cflags` -I${SDIR} ${FLAGS} ${BDIR}/sun_position.c -o ${BDIR}/sun_position.o
+	${CC} -c `pkg-config python-3.9-embed --cflags` -I${SDIR} ${FLAGS} ${BDIR}/sun_position.c -o ${BDIR}/sun_position.o
 
 ${BDIR}/sun_position.c: plugin_build.py | ${BDIR}
 	python3 plugin_build.py
